@@ -1,6 +1,6 @@
 # debrev
 
-Debian reverse proxy manager: nginx + certbot, git-versioned config, twin-server sync, no Docker.
+Reverse proxy manager for Debian: nginx + certbot, git-versioned config, twin-server sync, no Docker.
 See `docs/DESIGN.md` and `docs/ROADMAP.md`.
 
 ## Screenshots
@@ -182,3 +182,7 @@ sudo ./install.sh --fail2ban          # optional: ban addresses that keep hittin
 ## Known limitations
 - nginx will not load a config whose upstream *hostname* does not resolve, so a bad hostname fails the apply (safe, but also blocks other changes). Use IPs or fix DNS; a runtime-resolve option is planned.
 - Rollback of the live config swaps a symlink then runs `nginx -t`; the isolated pre-test runs first so the live config is normally never touched by a bad render.
+
+## License
+debrev is free software, released under the [GNU General Public License, version 3](LICENSE) (GPL-3.0).
+You may use, study, change and share it; changes you distribute must stay under the same license.

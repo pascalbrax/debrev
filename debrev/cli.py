@@ -621,7 +621,7 @@ def cmd_web(a, p):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap_ = argparse.ArgumentParser(prog="debrev", description="Debian reverse proxy manager")
+    ap_ = argparse.ArgumentParser(prog="debrev", description="Reverse proxy manager for Debian")
     ap_.add_argument("--version", action="version", version=__version__)
     sub = ap_.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init", help="create the state repository").set_defaults(fn=cmd_init)

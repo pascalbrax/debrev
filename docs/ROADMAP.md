@@ -1,6 +1,6 @@
 # debrev: Roadmap
 
-Name: **debrev** (Debian reverse proxy manager). No Docker. Every runtime dependency comes from stock Debian apt. The app itself is installed via git clone + `install.sh`, not as a .deb.
+Name: **debrev** (reverse proxy manager for Debian). No Docker. Every runtime dependency comes from stock Debian apt. The app itself is installed via git clone + `install.sh`, not as a .deb.
 
 Estimates are for one developer. MVP ≈ 4–5 weeks, polished v1 ≈ 11–13 weeks.
 
