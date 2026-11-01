@@ -380,3 +380,65 @@ def test_names_covered_by_a_wildcard_are_not_requested_separately(paths):
     write_host(paths, "w", "domain: example.com\naliases: ['*.example.com', a.example.com, b.c.example.com, other.org]\nupstream: http://10.0.0.1:80\n")
     item = certs.plan(st.load(paths)[0])[0]
     assert item.domains == ["example.com", "*.example.com", "b.c.example.com", "other.org"]
+
+
+# ---------------------------------------------------------------- hosts that use another host's certificate
+def _own_cert(paths, name, sans, days=60):
+    import json, subprocess
+    d = paths.certs_dir / name
+    d.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", str(days), "-subj", f"/CN={name}",
+                    "-addext", "subjectAltName=" + ",".join(f"DNS:{s}" for s in sans),
+                    "-keyout", str(d / "privkey.pem"), "-out", str(d / "fullchain.pem")], check=True, capture_output=True)
+    summ = paths.lib / "certs.json"
+    cur = json.loads(summ.read_text()) if summ.exists() else {}
+    cur[name] = {"sans": sorted(sans), "expires": "2099-01-01T00:00:00+00:00", "days_left": days, "staging": False}
+    summ.write_text(json.dumps(cur))
+
+
+def _shared_setup(paths, sans=("example.com", "*.example.com")):
+    from conftest import write_host
+    write_host(paths, "example.com", "domain: example.com\nupstream: http://10.0.0.1:80\naliases: ['*.example.com']\ntls:\n  challenge: dns\n")
+    write_host(paths, "app.example.com", "domain: app.example.com\nupstream: http://10.0.0.2:80\ntls:\n  cert: shared\n  cert_from: example.com\n")
+    _own_cert(paths, "example.com", list(sans))
+
+
+def test_shared_certificate_is_used_not_requested(paths):
+    from debrev import render as rd, state as stt
+    _shared_setup(paths)
+    hosts, acls, errors, _ = stt.load(paths)
+    assert not errors
+    assert [i.name for i in certs.plan(hosts)] == ["example.com"]                  # nothing is issued for the shared host
+    assert [i.name for i in certs.plan(hosts, custom=True)] == ["example.com"]
+    files, warns = rd.render(paths, hosts, acls)
+    conf = files["host-app_example_com.conf"]
+    assert f"ssl_certificate {paths.certs_dir}/example.com/fullchain.pem;" in conf and not warns
+    rows = certs.table(paths, hosts, stt.load_settings(paths)[0])
+    assert rows[0]["used_by"] == ["app.example.com"]
+
+
+def test_shared_certificate_must_exist_and_cover_the_host(paths):
+    from conftest import write_host
+    from debrev import state as stt
+    _shared_setup(paths, sans=("example.org",))                                  # certificate does not cover app.example.com
+    assert any("does not cover app.example.com" in e for e in stt.load(paths)[2])
+    _own_cert(paths, "example.com", ["example.com", "*.example.com"])
+    assert not stt.load(paths)[2]
+    write_host(paths, "app.example.com", "domain: app.example.com\nupstream: http://10.0.0.2:80\ntls:\n  cert: shared\n  cert_from: nowhere.example\n")
+    assert any("not the certificate of any enabled HTTPS host" in e for e in stt.load(paths)[2])
+    write_host(paths, "app.example.com", "domain: app.example.com\nupstream: http://10.0.0.2:80\ntls:\n  cert: shared\n")
+    assert any("cert_from" in e for e in stt.load(paths)[2])
+    write_host(paths, "app.example.com", "domain: app.example.com\nupstream: http://10.0.0.2:80\ntls:\n  cert_from: example.com\n")
+    assert any("only valid with cert: shared" in e for e in stt.load(paths)[2])
+    write_host(paths, "app.example.com", "domain: app.example.com\nupstream: http://10.0.0.2:80\ntls:\n  cert: shared\n  cert_from: app.example.com\n")
+    assert any("own certificate" in e for e in stt.load(paths)[2])
+
+
+def test_the_owner_cannot_be_disabled_or_removed_while_it_is_shared(paths):
+    from conftest import write_host
+    from debrev import state as stt
+    _shared_setup(paths)
+    write_host(paths, "example.com", "domain: example.com\nupstream: http://10.0.0.1:80\nenabled: false\n")
+    assert any("not the certificate of any enabled HTTPS host" in e for e in stt.load(paths)[2])
+    (paths.state / "hosts" / "example.com.yaml").unlink()
+    assert stt.load(paths)[2]

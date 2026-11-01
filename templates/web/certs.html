@@ -23,6 +23,7 @@
   <tr>
     <td class="pick">{% if c.kind != "custom" %}<input type="checkbox" name="name" value="{{ c.name }}" aria-label="Select {{ c.name }}">{% endif %}</td>
     <td><b>{{ c.name }}</b>{% if c.domains|length > 1 %}<span class="sub inline">+ {{ c.domains[1:]|join(", ") }}</span>{% endif %}
+      {% if c.used_by %}<span class="sub">also used by: {{ c.used_by|join(", ") }}</span>{% endif %}
       {% if c.needs and c.state != "missing" %}<span class="sub">needs: {{ c.needs }}</span>{% endif %}
       {% if c.last_error %}<span class="sub bad" title="{{ c.last_error }}">last error: {{ c.last_error|truncate(120) }}{% if c.next_try %} · retry after {{ c.next_try[:16]|replace("T", " ") }}Z{% endif %}</span>{% endif %}</td>
     <td class="opt nw">{% if c.kind == "custom" %}<span class="pill info">own certificate</span>{% else %}LE {{ "DNS-01" if c.challenge == "dns" else "HTTP-01" }}{% endif %}{% if c.staging %} <span class="pill warn">staging</span>{% endif %}</td>

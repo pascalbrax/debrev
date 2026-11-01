@@ -31,7 +31,19 @@ HOST_KEYS = {
     "request_headers", "response_headers", "access_list",
     "custom_locations", "custom_snippet", "note", "rate_limit",
 }
-TLS_KEYS = {"enabled", "cert", "cert_path", "key_path", "force_https", "hsts", "http2", "challenge", "dns_provider"}
+CERT_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$")
+
+
+def covers(sans, domain: str) -> bool:
+    """Does a certificate with these names cover `domain` (exact, or a one-label wildcard)?"""
+    if domain in sans:
+        return True
+    if domain.startswith("*."):
+        return False
+    return f"*.{domain.partition('.')[2]}" in sans
+
+
+TLS_KEYS = {"enabled", "cert", "cert_from", "cert_path", "key_path", "force_https", "hsts", "http2", "challenge", "dns_provider"}
 CACHE_KEYS = {"enabled", "ttl", "static_only", "bypass_cookies", "max_size"}
 TIMEOUT_KEYS = {"connect", "read", "send"}
 RATE_KEYS = {"rate", "burst", "connections"}
@@ -228,8 +240,17 @@ def normalise_host(raw: dict, access_lists: dict, where: str) -> tuple[dict | No
     if t["dns_provider"] is not None and not (isinstance(t["dns_provider"], str) and NAME_RE.match(t["dns_provider"])):
         errs.append(f"{where}.tls.dns_provider: must be the name of a provider from settings (acme.dns_providers)")
     t["cert"] = tls.get("cert", "auto")
-    if t["cert"] not in ("auto", "custom"):
-        errs.append(f"{where}.tls.cert: must be 'auto' or 'custom'")
+    if t["cert"] not in ("auto", "custom", "shared"):
+        errs.append(f"{where}.tls.cert: must be 'auto', 'custom' or 'shared'")
+    t["cert_from"] = None
+    if t["cert"] == "shared":
+        v = tls.get("cert_from")
+        if not isinstance(v, str) or not CERT_NAME_RE.match(v):
+            errs.append(f"{where}.tls.cert_from: must name the certificate to use, e.g. the domain of the host that owns it")
+        else:
+            t["cert_from"] = v
+    elif tls.get("cert_from") is not None:
+        errs.append(f"{where}.tls.cert_from: only valid with cert: shared")
     t["cert_path"] = t["key_path"] = None
     if t["cert"] == "custom":
         # Either both paths to files already on the server, or neither: then the certificate

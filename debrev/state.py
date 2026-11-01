@@ -8,6 +8,7 @@ state/
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 import shutil
@@ -19,7 +20,7 @@ import yaml
 
 from . import STATE_FORMAT
 from .paths import Paths
-from .schema import NAME_RE, normalise_host, validate_access_list
+from .schema import NAME_RE, covers, normalise_host, validate_access_list
 
 SUBDIRS = ("hosts", "access_lists")
 DEFAULT_SETTINGS = {"format": STATE_FORMAT}
@@ -216,6 +217,20 @@ def load_settings(p: Paths) -> tuple[dict, list[str]]:
     return {"acme": acme, "cluster": cl, "security": sec}, errs
 
 
+def cert_owners(hosts: list[dict]) -> dict[str, dict]:
+    """Certificate name -> the enabled HTTPS host that owns it (Let's Encrypt or uploaded; not shared, not path-based)."""
+    return {h["domain"].removeprefix("*."): h for h in hosts
+            if h["enabled"] and h["tls"]["enabled"] and (h["tls"]["cert"] == "auto" or (h["tls"]["cert"] == "custom" and not h["tls"]["cert_path"]))}
+
+
+def _published_names(p: Paths, name: str):
+    """Names on a certificate, from the non-secret summary the root helper publishes (None if unknown yet)."""
+    try:
+        return set(json.loads((p.lib / "certs.json").read_text())[name]["sans"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def load(p: Paths):
     """Load and validate the whole state.
 
@@ -274,11 +289,26 @@ def load(p: Paths):
             errors.append(f"hosts/{h['file']}: tls.dns_provider {prov!r} is not defined in settings (acme.dns_providers)")
     names: dict[str, str] = {}
     for h in hosts:
-        if h["enabled"] and h["tls"]["enabled"] and (h["tls"]["cert"] == "auto" or not h["tls"]["cert_path"]):
+        if h["enabled"] and h["tls"]["enabled"] and h["tls"]["cert"] != "shared" and (h["tls"]["cert"] == "auto" or not h["tls"]["cert_path"]):
             cn = h["domain"].removeprefix("*.")
             if cn in names:
                 errors.append(f"hosts/{h['file']}: certificate name {cn!r} collides with {names[cn]}")
             names[cn] = h["file"]
+    owners = cert_owners(hosts)
+    for h in hosts:
+        if not (h["enabled"] and h["tls"]["enabled"] and h["tls"]["cert"] == "shared" and h["tls"]["cert_from"]):
+            continue
+        src, where = h["tls"]["cert_from"], f"hosts/{h['file']}"
+        if src == h["domain"].removeprefix("*."):
+            errors.append(f"{where}: tls.cert_from cannot be the host's own certificate; use cert: auto")
+        elif src not in owners:
+            errors.append(f"{where}: tls.cert_from {src!r} is not the certificate of any enabled HTTPS host "
+                          f"(removed, disabled, or itself shared), so {h['domain']} would have no certificate")
+        else:
+            sans = _published_names(p, src)
+            miss = [n for n in [h["domain"], *h["aliases"]] if sans and not covers(sans, n)]
+            if miss:
+                errors.append(f"{where}: certificate {src} does not cover {', '.join(miss)}")
     return hosts, acls, errors, warnings
 
 

@@ -15,6 +15,7 @@
       {% if h.ws %}<span class="pill info">ws</span>{% endif %}
       {% if h.cache %}<span class="pill info">cache</span>{% endif %}
       {% if h.rl == "off" %}<span class="pill warn">no limit</span>{% elif h.rl == "custom" %}<span class="pill info">own limit</span>{% endif %}
+      {% if h.certfrom %}<span class="pill info" title="uses the certificate of {{ h.certfrom }}">cert:{{ h.certfrom }}</span>{% endif %}
       {% if h.acl %}<span class="pill info">acl:{{ h.acl }}</span>{% endif %}
     </td>
     <td class="nw">

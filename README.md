@@ -61,6 +61,7 @@ preserve_host: true                    # false -> Host header = upstream host
 tls: { enabled: true, cert: auto, challenge: http, force_https: true, hsts: false, http2: true }
                                        # cert: auto = Let's Encrypt (challenge: http | dns)
                                        # cert: custom = your own certificate (see "Your own certificates")
+                                       # cert: shared = use the certificate of another host: cert_from: example.com
 cache: { enabled: true, ttl: 10m, static_only: true, bypass_cookies: [session], max_size: 1g }
 max_body: 100m                         # 0 = unlimited
 buffering: true                        # false for streaming / S3; request_buffering likewise
@@ -106,6 +107,14 @@ debrev host add app.example.org http://10.0.0.5:80 --own-cert
 debrev certs upload app.example.org --cert fullchain.pem --key privkey.pem
 ```
 or paste it on the host's page in the web interface (there is a "load from file" button). debrev checks it before installing: valid PEM, key not password protected, key matches, not expired, and the certificate covers the host's domain and every alias (a `*.example.org` certificate covers one label). It is stored root-only, applied, and copied to the twin; the more recently installed copy wins on both servers. `cert_path`/`key_path` (both, absolute) still work if you manage the files yourself, but those are not synced.
+
+### One certificate for several hosts (wildcard)
+Tick *Wildcard certificate* on one host (say `example.com`): it gets one certificate for `example.com` and `*.example.com`
+(DNS-01). Other hosts such as `app.example.com` and `blog.example.com` pick **An installed certificate** as their source and
+choose it from the list (wildcard certificates are listed first; `debrev host add app.example.com URL --cert-from example.com`
+does the same on the command line). Nothing is requested for them; the owning host renews the certificate and both servers
+use it. debrev checks that the certificate covers the host's names, and refuses to remove or disable the owning host while
+other hosts use its certificate. The Certificates page shows which hosts share each certificate.
 
 ## Twin server (two nodes)
 On each node: `sudo ./install.sh --init`. Then, as the `debrev` user (`sudo -u debrev debrev ...`):

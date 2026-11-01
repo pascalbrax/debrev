@@ -17,6 +17,9 @@ def _slug(domain: str) -> str:
 def cert_files(p: Paths, h: dict) -> tuple[str, str]:
     if h["tls"]["cert"] == "custom" and h["tls"]["cert_path"]:
         return h["tls"]["cert_path"], h["tls"]["key_path"]
+    if h["tls"]["cert"] == "shared":
+        d = p.certs_dir / h["tls"]["cert_from"]
+        return str(d / "fullchain.pem"), str(d / "privkey.pem")
     d = p.certs_dir / h["domain"].removeprefix("*.")
     return str(d / "fullchain.pem"), str(d / "privkey.pem")
 

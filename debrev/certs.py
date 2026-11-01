@@ -59,19 +59,12 @@ def plan(hosts: list[dict], custom: bool = False) -> list[Item]:
             domains = [d for d in domains if d.startswith("*.") or f"*.{d.partition('.')[2]}" not in domains]
             items.append(Item(name, domains, "dns" if wildcard or h["tls"]["challenge"] == "dns" else "http", h["file"],
                               dns_provider=h["tls"].get("dns_provider")))
-        elif custom and not h["tls"]["cert_path"]:
+        elif custom and h["tls"]["cert"] == "custom" and not h["tls"]["cert_path"]:
             items.append(Item(name, domains, "custom", h["file"], kind="custom"))
     return items
 
 
-def covers(sans: set[str], domain: str) -> bool:
-    """Does a certificate with these names cover `domain` (exact, or a one-label wildcard)?"""
-    if domain in sans:
-        return True
-    if domain.startswith("*."):
-        return False
-    head, _, rest = domain.partition(".")
-    return f"*.{rest}" in sans
+from .schema import covers  # noqa: E402,F401  (kept here: callers use certs.covers)
 
 
 def _summary_file(p: Paths) -> Path:
@@ -746,7 +739,8 @@ def table(p: Paths, hosts: list[dict], settings: dict) -> list[dict]:
     status = _load_status(p)
     for item in plan(hosts, custom=True):
         info = cert_info(p, item.name)
-        row = {"name": item.name, "domains": item.domains, "challenge": item.challenge, "kind": item.kind}
+        row = {"name": item.name, "domains": item.domains, "challenge": item.challenge, "kind": item.kind,
+               "used_by": sorted(h["domain"] for h in hosts if h["enabled"] and h["tls"]["cert"] == "shared" and h["tls"]["cert_from"] == item.name)}
         if info is None:
             row["state"] = "missing"
         elif "error" in info:

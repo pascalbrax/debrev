@@ -301,7 +301,8 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
         return {"domain": h["domain"], "upstream": h["upstream"], "enabled": h["enabled"],
                 "tls": h["tls"]["enabled"], "ws": h["websockets"], "cache": h["cache"]["enabled"],
                 "aliases": h["aliases"], "acl": h["access_list"],
-                "rl": "off" if not h["rate_limit"] else "custom" if h["rate_limits"] else None}
+                "rl": "off" if not h["rate_limit"] else "custom" if h["rate_limits"] else None,
+                "certfrom": h["tls"]["cert_from"] if h["tls"]["cert"] == "shared" else None}
 
     @app.get("/hosts")
     def hosts_list(request: Request, s=Depends(session)):
@@ -363,6 +364,23 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
             raise HTTPException(404, "no such host")
         return f, st._load_yaml(f)
 
+    def cert_choices(domain: str, aliases: list[str]) -> list[dict]:
+        """Installed certificates a host could use, wildcard ones first. 'fits' = covers this host's names."""
+        hosts, _, errors, _ = state_load()
+        if errors:
+            return []
+        settings, _ = st.load_settings(p)
+        names = [n for n in [domain, *aliases] if n]
+        out = []
+        for r in cr.table(p, hosts, settings):
+            if not r.get("expires") or r["state"] in ("error", "expired", "missing"):
+                continue
+            info = cr.cert_info(p, r["name"]) or {}
+            sans = sorted(info.get("sans") or r["domains"])
+            out.append({"name": r["name"], "sans": sans, "expires": r["expires"], "wildcard": any(x.startswith("*.") for x in sans),
+                        "fits": bool(names) and all(cr.covers(set(sans), n) for n in names)})
+        return sorted(out, key=lambda c: (not c["wildcard"], not c["fits"], c["name"]))
+
     def form_ctx(raw: dict | None, new: bool, **extra):
         hosts, acls, _, _ = state_load()
         if raw is not None:
@@ -370,7 +388,9 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
         else:
             h = None
         provs = sorted((st.load_settings(p)[0]["acme"].get("dns_providers") or {}))
-        return dict(new=new, h=h, raw=raw or {}, acls=sorted(acls), providers=provs, **extra)
+        dom = (extra.get("values") or {}).get("domain") or (raw or {}).get("domain", "")
+        als = (raw or {}).get("aliases") or []
+        return dict(new=new, h=h, raw=raw or {}, acls=sorted(acls), providers=provs, certchoices=cert_choices(dom, als), **extra)
 
     @app.get("/hosts/new")
     def host_new_form(request: Request, s=Depends(session)):
@@ -422,14 +442,19 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
         wild = f"*.{domain}"
         if not domain.startswith("*."):          # checkbox "also all subdomains" = the wildcard alias
             al = [a for a in al if a != wild]
-            if form.get("wildcard") == "on":
+            if form.get("wildcard") == "on" and form.get("cert") != "shared":
                 al.append(wild)
         if al:
             raw["aliases"] = al
         else:
             raw.pop("aliases", None)
         own = form.get("cert") == "custom"
-        _set_flag(raw, ("tls", "cert"), "custom" if own else "auto", acls)
+        shared = form.get("cert") == "shared" and bool(str(form.get("cert_from", "")).strip())
+        _set_flag(raw, ("tls", "cert"), "shared" if shared else "custom" if own else "auto", acls)
+        if shared:
+            raw["tls"]["cert_from"] = str(form.get("cert_from")).strip().lower()
+        elif isinstance(raw.get("tls"), dict):
+            raw["tls"].pop("cert_from", None)
         _set_flag(raw, ("tls", "challenge"), "dns" if form.get("challenge") == "dns" or form.get("wildcard") == "on" else "http", acls)
         prov = str(form.get("dns_provider", "")).strip() or None
         _set_flag(raw, ("tls", "dns_provider"), prov, acls)
@@ -526,7 +551,9 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
         f, base = raw_host(domain)
         action = form.get("action", "save")
         if action == "delete":
-            await run_in_threadpool(write_validated, f"hosts/{domain}.yaml", None, f"host remove: {domain} (web)", s["user"])
+            errs = await run_in_threadpool(write_validated, f"hosts/{domain}.yaml", None, f"host remove: {domain} (web)", s["user"])
+            if errs:
+                return result(request, s, f"Cannot remove {domain}", False, "\n".join(errs), f"/hosts/{domain}")
             return redirect("/hosts", f"Removed {domain}. Not live until you apply.")
         if action == "upload_cert":
             fc, key = str(form.get("fullchain", "")).strip() + "\n", str(form.get("privkey", "")).strip() + "\n"

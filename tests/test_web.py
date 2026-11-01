@@ -534,3 +534,56 @@ def test_export_download_and_import_preview_then_save(client, paths):
 def test_import_page_needs_login(client):
     for url in ("/export", "/import"):
         assert client.get(url).status_code == 303
+
+
+def test_host_can_use_an_installed_certificate(client, paths):
+    from test_certs import _own_cert
+    from conftest import write_host
+    login(client)
+    write_host(paths, "example.com", "domain: example.com\nupstream: http://10.0.0.1:80\naliases: ['*.example.com']\ntls:\n  challenge: dns\n")
+    write_host(paths, "other.org", "domain: other.org\nupstream: http://10.0.0.1:81\n")
+    st.commit(paths, "seed", "t")
+    _own_cert(paths, "other.org", ["other.org"])
+    _own_cert(paths, "example.com", ["example.com", "*.example.com"])
+    page = client.get("/hosts/new").text
+    assert 'value="shared"' in page and 'name="cert_from"' in page
+    drop = page.split('name="cert_from"')[1].split("</select>")[0]
+    assert drop.index("example.com &ndash;") < drop.index("other.org &ndash;")          # wildcard certificates first
+    tok = csrf_of(client)
+    r = client.post("/hosts/new", data={"csrf": tok, "domain": "app.example.com", "upstream": "http://10.0.0.2:80",
+                                         "cert": "shared", "cert_from": "example.com", "tls": "on", "force_https": "on", "wildcard": "on", "enabled": "on"})
+    assert r.status_code == 303, r.text[:300]
+    saved = (paths.state / "hosts" / "app.example.com.yaml").read_text()
+    assert "cert: shared" in saved and "cert_from: example.com" in saved and "*.app.example.com" not in saved
+    assert "cert:example.com" in client.get("/hosts").text
+    certs_html = client.get("/certs").text
+    assert "also used by: app.example.com" in certs_html
+    r = client.post("/hosts/example.com", data={"csrf": tok, "action": "delete"})
+    assert r.status_code == 200 and "Cannot remove" in r.text and (paths.state / "hosts" / "example.com.yaml").exists()
+    r = client.post("/hosts/new", data={"csrf": tok, "domain": "x.other.org", "upstream": "http://10.0.0.2:80",
+                                         "cert": "shared", "cert_from": "other.org", "tls": "on", "enabled": "on"})
+    assert r.status_code == 400 and "does not cover x.other.org" in r.text                   # certificate must fit the host
+
+
+def test_cli_cert_from_and_remove_protection(paths, tmp_path):
+    import subprocess, sys
+    from test_certs import _own_cert
+    from conftest import write_host
+    from debrev.paths import APP_DIR
+    write_host(paths, "example.com", "domain: example.com\nupstream: http://10.0.0.1:80\naliases: ['*.example.com']\ntls:\n  challenge: dns\n")
+    st.commit(paths, "seed", "t")
+    _own_cert(paths, "example.com", ["example.com", "*.example.com"])
+    root = tmp_path / "r"
+    (root / "var/lib/debrev").mkdir(parents=True)
+    (root / "etc/debrev").mkdir(parents=True)
+    import shutil
+    env = {"PATH": "/usr/bin:/bin", "DEBREV_ROOT": str(root), "DEBREV_AUTHOR": "t"}
+    run = lambda *a: subprocess.run([sys.executable, "-m", "debrev", *a], cwd=APP_DIR, capture_output=True, text=True, env=env)
+    assert run("init").returncode == 0
+    shutil.copy(paths.state / "hosts" / "example.com.yaml", root / "var/lib/debrev/state/hosts/example.com.yaml")
+    shutil.copy(paths.lib / "certs.json", root / "var/lib/debrev/certs.json")
+    r = run("host", "add", "app.example.com", "http://10.0.0.2:80", "--cert-from", "example.com")
+    assert r.returncode == 0, r.stdout + r.stderr
+    r = run("host", "rm", "example.com")
+    assert r.returncode != 0 and "other hosts use its certificate" in (r.stdout + r.stderr)
+    assert (root / "var/lib/debrev/state/hosts/example.com.yaml").exists()

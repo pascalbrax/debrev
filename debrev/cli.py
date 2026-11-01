@@ -74,6 +74,8 @@ def cmd_host_add(a, p):
         doc["cache"] = {"enabled": True}
     if a.no_tls:
         doc["tls"] = False
+    elif a.cert_from:
+        doc["tls"] = {"cert": "shared", "cert_from": a.cert_from}
     elif a.own_cert or a.challenge or a.wildcard:
         doc["tls"] = {**({"cert": "custom"} if a.own_cert else {}),
                       **({"challenge": "dns"} if a.wildcard else {"challenge": a.challenge} if a.challenge else {})}
@@ -94,7 +96,12 @@ def cmd_host_rm(a, p):
     f = p.state / "hosts" / f"{a.domain.lower()}.yaml"
     if not f.exists():
         sys.exit(f"no such host: {a.domain}")
+    old = f.read_text()
     f.unlink()
+    users = [e for e in _validate_all(p) if "tls.cert_from" in e]
+    if users:
+        f.write_text(old)
+        sys.exit(f"not removed: other hosts use its certificate:\n  " + "\n  ".join(users))
     st.commit(p, f"host remove: {a.domain}", _author())
     print(f"removed {a.domain}; run 'debrev apply' to publish")
 
@@ -734,6 +741,7 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--cache", action="store_true")
     ad.add_argument("--no-tls", action="store_true")
     ad.add_argument("--own-cert", action="store_true", help="use your own certificate (add it with 'debrev certs upload')")
+    ad.add_argument("--cert-from", metavar="CERT", help="use an installed certificate (e.g. a wildcard one) instead of requesting one; CERT is the owning host's name, see 'debrev certs'")
     ad.add_argument("--challenge", choices=["http", "dns"], help="Let's Encrypt validation method (default http)")
     ad.add_argument("--wildcard", action="store_true", help="also cover *.DOMAIN with one wildcard certificate (DNS-01)")
     ad.add_argument("--access-list")

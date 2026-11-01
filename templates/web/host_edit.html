@@ -24,6 +24,7 @@
       <label>Source
         <select name="cert">
           <option value="auto" {% if not h or h.tls.cert == "auto" %}selected{% endif %}>Let's Encrypt (automatic)</option>
+          <option value="shared" {% if h and h.tls.cert == "shared" %}selected{% endif %}>An installed certificate (e.g. a wildcard)</option>
           <option value="custom" {% if h and h.tls.cert == "custom" %}selected{% endif %}>My own certificate</option>
         </select></label>
       <label>Let's Encrypt validation
@@ -44,6 +45,15 @@
     <p class="small muted">HTTP-01 is the simplest and needs the internet to reach port 80. DNS-01 needs no open port, works for wildcard names (<code>*.example.com</code>, always DNS-01) and requires the DNS provider set up under <a href="/settings">Settings</a>.
     {% if h and h.tls.cert == "custom" and h.tls.cert_path %}<br>Own certificate files are read from <code>{{ h.tls.cert_path }}</code> on the server.{% endif %}</p>
     {% if (h and h.tls.challenge == "dns" or raw.get("domain", "").startswith("*.")) and not dns_ready %}<div class="flash warn">DNS-01 needs a DNS provider: set it up in <a href="/settings">Settings</a> first.</div>{% endif %}
+    <div id="sharedcert" {% if not (h and h.tls.cert == "shared") %}hidden{% endif %}>
+      <label>Certificate to use
+        <select name="cert_from">
+          {% if not certchoices %}<option value="">no installed certificate yet</option>{% endif %}
+          {% for c in certchoices %}<option value="{{ c.name }}" {% if h and h.tls.cert_from == c.name %}selected{% endif %}>{{ "★ " if c.wildcard }}{{ c.name }} &ndash; {{ c.sans|join(", ") }} (until {{ c.expires }}){{ " ✓ covers this host" if c.fits and (h or values.get("domain")) }}</option>{% endfor %}
+          {% if h and h.tls.cert == "shared" and h.tls.cert_from not in certchoices|map(attribute="name")|list %}<option value="{{ h.tls.cert_from }}" selected>{{ h.tls.cert_from }} (not installed)</option>{% endif %}
+        </select></label>
+      <p class="small muted">Wildcard certificates (★) are listed first. The host that owns the certificate renews it; this host just uses it. The owning host can't be removed or disabled while another host uses its certificate, and the certificate must cover this host's names.</p>
+    </div>
     <div id="owncert" {% if not (h and h.tls.cert == "custom" and not h.tls.cert_path) %}hidden{% endif %}>
       <h3>Your certificate</h3>
       {% if cert and cert.expires and cert.kind == "custom" %}

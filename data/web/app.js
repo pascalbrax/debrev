@@ -28,6 +28,8 @@ document.addEventListener("change", function (e) {
   if (e.target.name !== "cert") return;
   var box = document.getElementById("owncert");
   if (box) box.hidden = e.target.value !== "custom";
+  var sh = document.getElementById("sharedcert");
+  if (sh) sh.hidden = e.target.value !== "shared";
 });
 // "select all" for a list of checkboxes
 document.addEventListener("change", function (e) {
