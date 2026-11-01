@@ -74,7 +74,7 @@ error: keepalived would refuse to run debrev's health check, so this server woul
 These must be owned by root and not writable by group/others:
   $bad
 Install from a root-owned directory such as /opt/debrev:
-  sudo git clone <repository> /opt/debrev && cd /opt/debrev && sudo ./install.sh --init
+  sudo git clone https://github.com/pascalbrax/debrev.git /opt/debrev && cd /opt/debrev && sudo ./install.sh --init
 or fix the current one:  sudo chown -R root:root $APP_DIR && sudo chmod -R go-w $APP_DIR
 MSG
   return 1
