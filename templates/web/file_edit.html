@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block body %}
+<div class="bar"><h1>{{ name or "New" }}</h1><a class="btn" href="/files/{{ kind }}">Back</a></div>
+<form method="post" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if new %}<label>Name <input name="name" value="{{ name }}" required autocapitalize="none" placeholder="office"></label>{% endif %}
+  <textarea name="yaml" rows="20" class="code" spellcheck="false" autocapitalize="none" aria-label="YAML">{{ text }}</textarea>
+  <div class="actions"><button class="primary">Validate &amp; save</button></div>
+</form>
+{% if not new %}
+<form method="post" class="card danger" data-confirm="Remove {{ name }}?">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete">
+  <button class="bad">Remove</button>
+</form>
+{% endif %}
+{% endblock %}

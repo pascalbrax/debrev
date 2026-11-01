@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Dashboard</h1>
+{% if d.nodes %}
+<div class="grid nodes">
+  {% for n in d.nodes %}
+  <section class="card node {{ 'master' if n.master }}">
+    <h2>{{ n.name }}{% if n.here %} <span class="pill info">you are here</span>{% endif %}</h2>
+    <dl>
+      <dt>Address</dt><dd><code>{{ n.ip }}</code></dd>
+      <dt>Role</dt><dd>{% if n.master %}<span class="pill ok">MASTER</span> serves {{ d.cluster.vip if d.cluster else "traffic" }}
+        {% elif n.vrrp %}<span class="pill">{{ n.vrrp }}</span> standby{% else %}<span class="pill">{{ "unknown" if n.error else "VRRP off" }}</span>{% endif %}
+        {% if n.drained %}<span class="pill warn">drained</span>{% endif %}</dd>
+      <dt>Health</dt><dd>{% if n.error %}<span class="pill bad">unreachable</span> <small class="muted">{{ n.error }}</small>
+        {% else %}<span class="pill {{ 'ok' if n.healthy else 'bad' }}">{{ "healthy" if n.healthy else "unhealthy" }}</span>{% endif %}</dd>
+    </dl>
+  </section>
+  {% endfor %}
+</div>
+{% if d.cluster %}<p class="small muted">Virtual IP <code>{{ d.cluster.vip }}</code> – point your port forwarding here. Whichever server is MASTER answers on it.</p>{% endif %}
+{% endif %}
+<div class="grid">
+  <section class="card">
+    <h2>Configuration</h2>
+    <dl>
+      <dt>Hosts</dt><dd>{{ d.hosts|length }} ({{ d.hosts|selectattr("enabled")|list|length }} enabled)</dd>
+      <dt>Saved version</dt><dd><code>{{ d.head or "-" }}</code></dd>
+      <dt>Live version</dt><dd><code>{{ (d.applied.commit or "-")[:8] }}</code> <small>{{ d.applied.time or "never applied" }}</small></dd>
+      <dt>Validation</dt><dd>{% if d.errors %}<span class="pill bad">{{ d.errors|length }} error(s)</span>{% else %}<span class="pill ok">OK</span>{% endif %}</dd>
+    </dl>
+    {% for e in d.errors %}<p class="small bad">{{ e }}</p>{% endfor %}
+    {% for e in d.warnings %}<p class="small">{{ e }}</p>{% endfor %}
+  </section>
+  <section class="card">
+    <h2>Failover</h2>
+    {% if d.cluster %}
+    <dl>
+      <dt>Virtual IP</dt><dd><code>{{ d.cluster.vip }}</code></dd>
+      <dt>This node</dt><dd><span class="pill {{ 'ok' if d.cluster.vrrp == 'MASTER' else 'info' }}">{{ d.cluster.vrrp or "VRRP off" }}</span>
+        {% if d.cluster.drained %}<span class="pill warn">drained</span>{% endif %}
+        {% if not d.cluster.healthy %}<span class="pill bad">unhealthy</span>{% endif %}</dd>
+      <dt>Certificates</dt><dd>{{ "this node requests them" if d.acme_issuer else "the twin requests them" }}</dd>
+    </dl>
+    {% else %}<p class="muted">No virtual IP configured.</p>{% endif %}
+    {% if d.sync %}<p class="small">Twin sync: <b>{{ d.sync.state or "never run" }}</b>{% if d.sync.message %} – {{ d.sync.message }}{% endif %}</p>{% endif %}
+    <p><a class="btn" href="/cluster">Cluster</a></p>
+  </section>
+  <section class="card">
+    <h2>Certificates</h2>
+    {% set bad = d.certs|rejectattr("state", "equalto", "ok")|list %}
+    <p>{{ d.certs|length - bad|length }} of {{ d.certs|length }} ok.</p>
+    {% for c in bad[:6] %}<div class="small"><span class="pill {{ 'warn' if c.state == 'expiring' else 'bad' }}">{{ c.state }}</span> {{ c.name }}</div>{% endfor %}
+    {% if bad|length > 6 %}<p class="small muted">+ {{ bad|length - 6 }} more</p>{% endif %}
+    <p><a class="btn" href="/certs">Certificates</a></p>
+  </section>
+</div>
+{% endblock %}

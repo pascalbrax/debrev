@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Security{% endblock %}
+{% block body %}
+<h1>Security</h1>
+<div class="flash {{ {'ready': 'ok', 'caution': 'warn', 'blocked': 'err'}[verdict] }}">
+  {% if verdict == "blocked" %}<b>Not ready for the internet.</b> Fix the red items first.
+  {% elif verdict == "caution" %}<b>No blockers.</b> Read the warnings before you open the firewall.
+  {% else %}<b>No problems found.</b>{% endif %}
+  This checks this server only; your router and firewall are not visible from here.
+</div>
+<table class="list">
+  <thead><tr><th>Status</th><th>Check</th></tr></thead>
+  <tbody>
+  {% for c in checks %}
+  <tr><td><span class="pill {{ {'ok': 'ok', 'info': 'info', 'warn': 'warn', 'fail': 'bad'}[c.level] }}">{{ c.level }}</span></td>
+      <td><b>{{ c.title }}</b>{% if c.detail %}<br><small class="muted">{{ c.detail }}</small>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="small muted">Rate limits are set under <a href="/settings">Settings</a>. Only ports 80 and 443 should ever be forwarded to the virtual IP.</p>
+{% endblock %}

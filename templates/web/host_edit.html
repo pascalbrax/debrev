@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ "New host" if new else h.domain if h else "Host" }}{% endblock %}
+{% block body %}
+{% set cur = h or {} %}
+<div class="bar"><h1>{{ "New host" if new else raw.get("domain", "Host") }}</h1>{% if not new %}<a class="btn" href="/hosts">All hosts</a>{% endif %}</div>
+<form method="post" class="card" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="adv" value="1">
+  {% if new %}<label>Domain <input name="domain" value="{{ values.get('domain', '') }}" placeholder="app.example.com" required autocapitalize="none" spellcheck="false"></label>{% endif %}
+  <label>Upstream <input name="upstream" value="{{ values.get('upstream') or raw.get('upstream', '') }}" placeholder="http://10.0.0.5:3000" required autocapitalize="none" spellcheck="false"></label>
+  <label>Extra domain names <small>(one per line)</small>
+    <textarea name="aliases" rows="2" spellcheck="false">{{ values.get('aliases') if values.get('aliases') is not none else (raw.get('aliases', [])|join("\n")) }}</textarea></label>
+  <fieldset><legend>Options</legend>
+    <label class="check"><input type="checkbox" name="enabled" {% if not h or h.enabled %}checked{% endif %}> Enabled</label>
+    <label class="check"><input type="checkbox" name="rate_limit" {% if not h or h.rate_limit %}checked{% endif %}> Rate limit</label>
+    <label class="check"><input type="checkbox" name="websockets" {% if h and h.websockets %}checked{% endif %}> WebSockets</label>
+    <label class="check"><input type="checkbox" name="cache" {% if h and h.cache.enabled %}checked{% endif %}> Cache static files</label>
+    <label class="check"><input type="checkbox" name="tls" {% if not h or h.tls.enabled %}checked{% endif %}> HTTPS (Let's Encrypt)</label>
+    <label class="check"><input type="checkbox" name="force_https" {% if not h or h.tls.force_https %}checked{% endif %}> Redirect HTTP to HTTPS</label>
+    <label class="check"><input type="checkbox" name="hsts" {% if h and h.tls.hsts %}checked{% endif %}> HSTS</label>
+  </fieldset>
+  <fieldset><legend>HTTPS certificate</legend>
+    <div class="two">
+      <label>Source
+        <select name="cert">
+          <option value="auto" {% if not h or h.tls.cert == "auto" %}selected{% endif %}>Let's Encrypt (automatic)</option>
+          <option value="custom" {% if h and h.tls.cert == "custom" %}selected{% endif %}>My own certificate</option>
+        </select></label>
+      <label>Let's Encrypt validation
+        <select name="challenge">
+          <option value="http" {% if not h or h.tls.challenge == "http" %}selected{% endif %}>HTTP-01 – port 80 must reach this server</option>
+          <option value="dns" {% if h and h.tls.challenge == "dns" %}selected{% endif %}>DNS-01 – via your DNS provider's API</option>
+        </select></label>
+    </div>
+    {% set _dom = values.get('domain') or raw.get('domain', '') %}
+    {% set _al = (values.get('aliases') if values.get('aliases') is not none else (raw.get('aliases', [])|join("\n"))).split() %}
+    {% if not _dom.startswith("*.") %}
+    <label class="check"><input type="checkbox" name="wildcard" {% if ("*." ~ _dom) in _al %}checked{% endif %}> Wildcard certificate: also cover all subdomains (<code>*.{{ _dom or "example.com" }}</code>) &ndash; uses DNS-01</label>
+    {% endif %}
+    {% if providers %}
+    <label>DNS provider for DNS-01
+      <select name="dns_provider"><option value="">default provider</option>{% for pr in providers %}<option {% if h and h.tls.dns_provider == pr %}selected{% endif %}>{{ pr }}</option>{% endfor %}</select></label>
+    {% endif %}
+    <p class="small muted">HTTP-01 is the simplest and needs the internet to reach port 80. DNS-01 needs no open port, works for wildcard names (<code>*.example.com</code>, always DNS-01) and requires the DNS provider set up under <a href="/settings">Settings</a>.
+    {% if h and h.tls.cert == "custom" and h.tls.cert_path %}<br>Own certificate files are read from <code>{{ h.tls.cert_path }}</code> on the server.{% endif %}</p>
+    {% if (h and h.tls.challenge == "dns" or raw.get("domain", "").startswith("*.")) and not dns_ready %}<div class="flash warn">DNS-01 needs a DNS provider: set it up in <a href="/settings">Settings</a> first.</div>{% endif %}
+    <div id="owncert" {% if not (h and h.tls.cert == "custom" and not h.tls.cert_path) %}hidden{% endif %}>
+      <h3>Your certificate</h3>
+      {% if cert and cert.expires and cert.kind == "custom" %}
+      <p><span class="pill {{ 'ok' if cert.state == 'ok' else 'warn' if cert.state == 'expiring' else 'bad' }}">{{ cert.state }}</span>
+         valid until <b>{{ cert.expires }}</b> ({{ cert.days_left }} days){% if cert.needs %} · <span class="bad">{{ cert.needs }}</span>{% endif %}.
+         Paste a new one below only to replace it.</p>
+      {% else %}<p class="flash warn">No certificate installed yet. This host cannot serve HTTPS until you add one.</p>{% endif %}
+      <p class="small muted">Certificate file (PEM): your certificate followed by the intermediate chain. The key must not be password protected. Both are stored root-only on both servers and the key is never shown again.</p>
+      <label>Certificate + chain <input type="file" data-load="#fullchain" accept=".pem,.crt,.cer,.txt">
+        <textarea id="fullchain" name="fullchain" rows="6" class="code" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+      <label>Private key <input type="file" data-load="#privkey" accept=".pem,.key,.txt">
+        <textarea id="privkey" name="privkey" rows="5" class="code" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+    </div>
+  </fieldset>
+  <div class="two">
+    <label>Max upload size <small>(e.g. 10g, 0 = unlimited)</small> <input name="max_body" value="{{ raw.get('max_body', '') }}" placeholder="default" autocapitalize="none"></label>
+    <label>Access list
+      <select name="access_list"><option value="">none</option>{% for a in acls %}<option {% if raw.get('access_list') == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+  </div>
+  <details class="adv" {% if raw.get('timeouts') or raw.get('custom_snippet') or raw.get('rate_limit') is mapping or h and (not h.buffering or not h.request_buffering) %}open{% endif %}>
+    <summary>Advanced: timeouts, buffering, rate limit, nginx snippet</summary>
+    <fieldset><legend>Timeouts <small>(seconds or 10m, 1h ...; blank = nginx default 60s)</small></legend>
+      <div class="three">
+        <label>Connect <input name="to_connect" value="{{ (raw.get('timeouts') or {}).get('connect', '') }}" autocapitalize="none"></label>
+        <label>Read <input name="to_read" value="{{ (raw.get('timeouts') or {}).get('read', '') }}" autocapitalize="none"></label>
+        <label>Send <input name="to_send" value="{{ (raw.get('timeouts') or {}).get('send', '') }}" autocapitalize="none"></label>
+      </div>
+    </fieldset>
+    <fieldset><legend>Buffering</legend>
+      <label class="check"><input type="checkbox" name="buffering" {% if not h or h.buffering %}checked{% endif %}> Buffer responses <small>(turn off for streaming and S3/MinIO)</small></label>
+      <label class="check"><input type="checkbox" name="request_buffering" {% if not h or h.request_buffering %}checked{% endif %}> Buffer uploads <small>(turn off to stream big uploads straight to the backend)</small></label>
+    </fieldset>
+    <fieldset><legend>Own rate limit <small>(per visitor address; blank = the server-wide values from Settings; needs "Rate limit" ticked above)</small></legend>
+      <div class="three">
+        <label>Requests per second <input type="number" name="rl_rate" min="1" value="{{ h.rate_limits.rate if h and h.rate_limits.rate is defined else '' }}"></label>
+        <label>Burst <input type="number" name="rl_burst" min="0" value="{{ h.rate_limits.burst if h and h.rate_limits.burst is defined else '' }}"></label>
+        <label>Simultaneous connections <input type="number" name="rl_connections" min="1" value="{{ h.rate_limits.connections if h and h.rate_limits.connections is defined else '' }}"></label>
+      </div>
+    </fieldset>
+    <label>Extra nginx configuration <small>(placed inside this host's server block; checked before saving)</small>
+      <textarea name="custom_snippet" rows="6" spellcheck="false" class="mono">{{ raw.get('custom_snippet', '') }}</textarea></label>
+  </details>
+  <label>Note <input name="note" value="{{ raw.get('note', '') }}" maxlength="200"></label>
+  <div class="actions">
+    <button class="primary" name="then" value="apply">Save &amp; apply</button>
+    <button name="then" value="save">Save only</button>
+  </div>
+</form>
+
+{% if not new %}
+<details class="card" {% if tab == "yaml" %}open{% endif %}>
+  <summary>Advanced: edit the full definition (YAML)</summary>
+  <p class="small muted">Custom locations, headers, timeouts and raw nginx snippets live here.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="yaml">
+    <textarea name="yaml" rows="18" class="code" spellcheck="false" autocapitalize="none">{{ yaml_text }}</textarea>
+    <div class="actions"><button class="primary">Validate &amp; save</button></div>
+  </form>
+</details>
+<form method="post" class="card danger" data-confirm="Remove {{ raw.get('domain') }}?">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete">
+  <button class="bad">Remove this host</button>
+</form>
+{% endif %}
+{% endblock %}

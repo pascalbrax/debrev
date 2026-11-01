@@ -1,0 +1,191 @@
+# Managed by debrev from hosts/{{ h.file }}. Do not edit.
+{% macro headers(h) %}
+{% if h.tls_active and h.tls.hsts %}
+add_header Strict-Transport-Security "max-age=31536000" always;
+{% endif %}
+{% for k, v in h.response_headers.items() %}
+add_header {{ k }} "{{ v }}" always;
+{% endfor %}
+{% endmacro %}
+{% macro proxy(h, up, ws, cached) %}
+proxy_pass {{ up.url }};
+proxy_set_header Host {{ '$host' if h.preserve_host else up.host_header }};
+{% if up.ssl_name %}
+proxy_ssl_server_name on;
+proxy_ssl_name {{ up.ssl_name }};
+{% endif %}
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+{% for k, v in h.request_headers.items() %}
+proxy_set_header {{ k }} "{{ v }}";
+{% endfor %}
+{% if not h.buffering %}
+proxy_buffering off;
+{% endif %}
+{% if not h.request_buffering %}
+proxy_request_buffering off;
+{% endif %}
+{% if ws %}
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $debrev_connection_upgrade;
+{% endif %}
+{% if h.timeouts.get("connect") %}
+proxy_connect_timeout {{ h.timeouts["connect"] }};
+{% endif %}
+{% if h.timeouts.get("read") %}
+proxy_read_timeout {{ h.timeouts["read"] }};
+{% endif %}
+{% if h.timeouts.get("send") %}
+proxy_send_timeout {{ h.timeouts["send"] }};
+{% endif %}
+{% if cached %}
+proxy_cache {{ h.cache_zone }};
+proxy_cache_valid 200 301 302 {{ h.cache.ttl }};
+proxy_cache_lock on;
+proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+{% set skip %}{% if h.cache.static_only %}$debrev_skip_{{ h.slug }} {% endif %}{% for c in h.cache.bypass_cookies %}$cookie_{{ c }} {% endfor %}{% endset %}
+{% if skip.strip() %}
+proxy_cache_bypass {{ skip.strip() }};
+proxy_no_cache {{ skip.strip() }};
+{% endif %}
+add_header X-Cache-Status $upstream_cache_status always;
+{% endif %}
+{{ headers(h) }}
+{% endmacro %}
+{% macro limits(h) %}
+{% if h.rl %}
+limit_req zone={{ h.rl.zone }} burst={{ h.rl.burst }} nodelay;
+limit_conn debrev_conn {{ h.rl.conn }};
+{% endif %}
+{% endmacro %}
+{% macro site(h) %}
+{% if h.access_list %}
+{% for a in acl.allow %}
+allow {{ a }};
+{% endfor %}
+{% for a in acl.deny %}
+deny {{ a }};
+{% endfor %}
+{% if acl.allow %}
+deny all;
+{% endif %}
+{% endif %}
+{% if h.max_body %}
+client_max_body_size {{ h.max_body }};
+{% endif %}
+{% for loc in h.custom_locations %}
+
+location {{ loc.path }} {
+{{ proxy(h, loc.up, loc.websockets, false) | indent(4, true) }}
+}
+{% endfor %}
+
+location / {
+{% if h.cache.enabled and h.cache.static_only %}
+    set $debrev_skip_{{ h.slug }} 1;
+    if ($uri ~* "\.(?:css|js|mjs|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp4|webm)$") {
+        set $debrev_skip_{{ h.slug }} 0;
+    }
+{% endif %}
+{{ proxy(h, h.up, h.websockets, h.cache.enabled) | indent(4, true) }}
+}
+{% if h.custom_snippet %}
+
+# custom snippet
+{{ h.custom_snippet }}
+{% endif %}
+{% endmacro %}
+{% set names = ([h.domain] + h.aliases) | join(' ') %}
+{% if h.tls_active %}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ names }};
+{{ limits(h) | indent(4, true) }}
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        root {{ acme_root }};
+{% if peer_ip %}
+        try_files $uri @debrev_acme_peer;
+{% endif %}
+    }
+{% if peer_ip %}
+
+    # Not our token? The twin may be the node that asked Let's Encrypt. One hop only.
+    location @debrev_acme_peer {
+        if ($http_x_debrev_acme_hop) {
+            return 404;
+        }
+        proxy_pass http://{{ peer_ip | replace("[", "") }}:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Debrev-Acme-Hop 1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+    }
+{% endif %}
+{% if h.tls.force_https %}
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+{% else %}
+{{ site(h) | indent(4, true) }}
+{% endif %}
+}
+
+server {
+{% if h.tls.http2 and old_http2 %}
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+{% else %}
+    listen 443 ssl;
+    listen [::]:443 ssl;
+{% if h.tls.http2 %}
+    http2 on;
+{% endif %}
+{% endif %}
+    server_name {{ names }};
+{{ limits(h) | indent(4, true) }}
+
+    ssl_certificate {{ h.cert_path }};
+    ssl_certificate_key {{ h.key_path }};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:debrev_ssl:10m;
+    ssl_session_timeout 1d;
+{{ site(h) | indent(4, true) }}
+}
+{% else %}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ names }};
+{{ limits(h) | indent(4, true) }}
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        root {{ acme_root }};
+{% if peer_ip %}
+        try_files $uri @debrev_acme_peer;
+{% endif %}
+    }
+{% if peer_ip %}
+
+    # Not our token? The twin may be the node that asked Let's Encrypt. One hop only.
+    location @debrev_acme_peer {
+        if ($http_x_debrev_acme_hop) {
+            return 404;
+        }
+        proxy_pass http://{{ peer_ip | replace("[", "") }}:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Debrev-Acme-Hop 1;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+    }
+{% endif %}
+{{ site(h) | indent(4, true) }}
+}
+{% endif %}

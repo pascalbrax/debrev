@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Health{% endblock %}
+{% block body %}
+<h1>Health <small>this server, from nginx's access log</small></h1>
+<div class="actions rangebar">
+  {% for r, label in [("1h", "Last hour"), ("24h", "24 hours"), ("7d", "7 days")] %}
+  <a class="btn {% if rng == r %}primary{% endif %}" href="/health?range={{ r }}{% if only %}&amp;only=errors{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% if not st.log_exists %}
+<div class="flash warn">No access log yet. It appears after the next apply on this server (<code>{{ "/var/log/nginx/debrev.log" }}</code>); run <code>debrev apply</code> if this stays empty.</div>
+{% endif %}
+
+<section class="card">
+  <h2>This server <small>now, up {{ uptime }}</small></h2>
+  <div class="grid meters">
+    <div><label>CPU <b>{{ sysi.cpu }}%</b><meter min="0" max="100" low="70" high="90" optimum="10" value="{{ sysi.cpu }}"></meter></label>
+      <small class="muted">load {{ sysi.load | join(" · ") }} on {{ sysi.cores }} core{{ "s" if sysi.cores != 1 }}</small></div>
+    <div><label>Memory <b>{{ sysi.mem.percent }}%</b><meter min="0" max="100" low="75" high="90" optimum="10" value="{{ sysi.mem.percent }}"></meter></label>
+      <small class="muted">{{ hb(sysi.mem.used) }} of {{ hb(sysi.mem.total) }}{% if sysi.mem.swap_total %} · swap {{ hb(sysi.mem.swap_used) }} of {{ hb(sysi.mem.swap_total) }}{% endif %}</small></div>
+    {% for d in sysi.disks %}<div><label>Disk {{ d.label }} <b>{{ d.percent }}%</b><meter min="0" max="100" low="80" high="92" optimum="10" value="{{ d.percent }}"></meter></label>
+      <small class="muted">{{ hb(d.used) }} of {{ hb(d.total) }} · {{ d.path }}</small></div>{% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>What needs attention</h2>
+  <ul class="sug">
+  {% for x in sug %}
+    <li><span class="pill {{ {'bad': 'bad', 'warn': 'warn', 'info': 'info', 'ok': 'ok'}[x.level] }}">{{ {'bad': 'problem', 'warn': 'check', 'info': 'note', 'ok': 'ok'}[x.level] }}</span>
+      <div><b>{% if x.link %}<a href="{{ x.link }}">{{ x.title }}</a>{% else %}{{ x.title }}{% endif %}</b><br><small class="muted">{{ x.detail }}</small></div></li>
+  {% endfor %}
+  </ul>
+</section>
+
+<div class="grid stats">
+  <section class="card stat"><h2>Requests</h2><div class="big">{{ tot.n }}</div></section>
+  <section class="card stat"><h2>Traffic sent</h2><div class="big">{{ hb(tot.bytes) }}</div></section>
+  <section class="card stat"><h2>Server errors</h2><div class="big {% if tot.c5 %}bad{% endif %}">{{ tot.c5 }}</div></section>
+  <section class="card stat"><h2>Rate limited</h2><div class="big {% if tot.c429 %}warn{% endif %}">{{ tot.c429 }}</div></section>
+  <section class="card stat"><h2>Avg response</h2><div class="big">{{ tot.avg_ms }} <small>ms</small></div></section>
+</div>
+
+<section class="card">
+  <h2>Requests <small>by status, per {{ "minute" if step == 60 else "30 minutes" if step == 1800 else "3 hours" }}</small></h2>
+  <div class="chartbox"><span class="axis">{{ req.max }}</span>{{ req.svg | safe }}</div>
+  <div class="axisx"><span>{{ req.first }}</span><span>{{ req.last }}</span></div>
+  <div class="legend">{% for k in classes %}<span><i class="sw {{ k }}"></i>{{ labels[k] }}</span>{% endfor %}</div>
+</section>
+<section class="card">
+  <h2>Traffic sent <small>bytes to visitors</small></h2>
+  <div class="chartbox"><span class="axis">{{ byt.max }}</span>{{ byt.svg | safe }}</div>
+  <div class="axisx"><span>{{ byt.first }}</span><span>{{ byt.last }}</span></div>
+  <details><summary>Show as table</summary>
+    <div class="tablewrap"><table class="t"><thead><tr><th>Time</th><th>Requests</th>{% for k in classes %}<th>{{ k[1:] }}</th>{% endfor %}<th>Sent</th></tr></thead><tbody>
+    {% for b in series|reverse %}{% if b.n %}<tr><td>{{ b.t | int | timefmt }}</td><td>{{ b.n }}</td>{% for k in classes %}<td>{{ b[k] or "" }}</td>{% endfor %}<td>{{ hb(b.bytes) }}</td></tr>{% endif %}{% endfor %}
+    </tbody></table></div></details>
+</section>
+
+<div class="grid2">
+<section class="card">
+  <h2>Backends <small>reachable from this server now</small></h2>
+  <div class="tablewrap"><table class="t"><thead><tr><th>Host</th><th>Backend</th><th>State</th></tr></thead><tbody>
+  {% for u in ups %}<tr><td>{{ u.domain }}</td><td class="mono">{{ u.target }}</td>
+    <td>{% if u.up %}<span class="pill ok">up {{ u.ms }} ms</span>{% else %}<span class="pill bad">down</span> <small class="muted">{{ u.error }}</small>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="card">
+  <h2>Hosts <small>in this period</small></h2>
+  <div class="tablewrap"><table class="t"><thead><tr><th>Host</th><th>Requests</th><th>4xx</th><th>5xx</th><th>429</th><th>Sent</th><th>Avg ms</th></tr></thead><tbody>
+  {% for r in rows %}<tr><td>{{ r.host }}</td><td>{{ r.n }}</td><td>{{ r.c4 or "" }}</td><td class="{% if r.c5 %}bad{% endif %}">{{ r.c5 or "" }}</td><td>{{ r.c429 or "" }}</td><td>{{ hb(r.bytes) }}</td><td>{{ r.avg_ms }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+</div>
+
+<section class="card">
+  <h2>Busiest addresses</h2>
+  <div class="tablewrap"><table class="t"><thead><tr><th>Address</th><th>Requests</th><th>Normal</th><th>Refused / not found</th><th>Rate limited</th><th>Sent</th></tr></thead><tbody>
+  {% for i in ips %}<tr><td class="mono">{{ i.ip }}</td><td>{{ i.n }}</td><td>{{ i.ok }}</td><td>{{ i.bad or "" }}</td><td>{{ i.lim or "" }}</td><td>{{ hb(i.bytes) }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="small muted">An address with mostly refused or not-found requests is a scanner. Addresses on your local networks are shown too.</p>
+</section>
+
+<section class="card">
+  <h2>Latest requests <small>newest first</small></h2>
+  <div class="actions"><a class="btn {% if not only %}primary{% endif %}" href="/health?range={{ rng }}">All</a>
+    <a class="btn {% if only %}primary{% endif %}" href="/health?range={{ rng }}&amp;only=errors">Errors only</a></div>
+  <div class="tablewrap"><table class="t log"><thead><tr><th>Time</th><th>Address</th><th>Host</th><th>Request</th><th>Status</th><th>Sent</th><th>ms</th></tr></thead><tbody>
+  {% for r in recent %}<tr><td class="mono">{{ r.t | int | timefmt }}</td><td class="mono">{{ r.ip }}</td><td>{{ r.host }}</td>
+    <td class="mono">{{ r.m }} {{ r.u[:80] }}</td>
+    <td><span class="pill {{ 'ok' if r.s < 300 else 'info' if r.s < 400 else 'bad' if r.s >= 500 else 'warn' }}">{{ r.s }}</span></td>
+    <td>{{ hb(r.b) }}</td><td>{{ (r.rt * 1000) | round | int }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No requests yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

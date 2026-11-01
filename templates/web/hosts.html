@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Hosts{% endblock %}
+{% block body %}
+<div class="bar"><h1>Hosts <small>{{ hosts|length }}</small></h1><a class="btn primary" href="/hosts/new">+ Add host</a></div>
+<input type="search" id="filter" placeholder="filter…" aria-label="Filter hosts" data-filter="#hostlist .row">
+<div class="tablewrap">
+<table class="t" id="hostlist">
+  <thead><tr><th>Domain</th><th>Upstream</th><th class="opt">Options</th><th>State</th></tr></thead>
+  <tbody>
+  {% for h in hosts %}
+  <tr class="row">
+    <td><a class="dom" href="/hosts/{{ h.domain }}">{{ h.domain }}</a>{% if h.aliases %}<span class="sub">+ {{ h.aliases|join(", ") }}</span>{% endif %}</td>
+    <td class="mono break">{{ h.upstream }}</td>
+    <td class="opt">
+      {% if h.ws %}<span class="pill info">ws</span>{% endif %}
+      {% if h.cache %}<span class="pill info">cache</span>{% endif %}
+      {% if h.rl == "off" %}<span class="pill warn">no limit</span>{% elif h.rl == "custom" %}<span class="pill info">own limit</span>{% endif %}
+      {% if h.acl %}<span class="pill info">acl:{{ h.acl }}</span>{% endif %}
+    </td>
+    <td class="nw">
+      {% if not h.enabled %}<span class="led warn"></span>off{% elif not h.tls %}<span class="led bad"></span>no tls{% else %}<span class="led ok"></span>on{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">No hosts yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

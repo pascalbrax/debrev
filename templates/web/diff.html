@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Change {{ rev[:8] }}{% endblock %}
+{% block body %}
+<div class="bar"><h1>Change {{ rev[:8] }}</h1><a class="btn" href="/history">Back</a></div>
+<pre class="diff">{% for cls, line in lines %}<span class="{{ cls }}">{{ line }}</span>
+{% endfor %}</pre>
+{% endblock %}

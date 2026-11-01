@@ -1,0 +1,80 @@
+# Managed by debrev. Do not edit; changes are overwritten on the next apply.
+map $http_upgrade $debrev_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+# Hardening: drop slow or stuck clients early (Debian's nginx.conf already hides the version).
+client_header_timeout 15s;
+client_body_timeout 60s;
+send_timeout 60s;
+reset_timedout_connection on;
+large_client_header_buffers 4 16k;
+{% if sec.rate_limit %}
+
+# Abuse protection: limits per client address. Local networks are {{ "exempt" if sec.lan_exempt else "limited too" }}.
+{% if sec.lan_exempt %}
+geo $debrev_local {
+    default 0;
+    127.0.0.0/8 1;
+    10.0.0.0/8 1;
+    172.16.0.0/12 1;
+    192.168.0.0/16 1;
+    ::1 1;
+    fc00::/7 1;
+}
+map $debrev_local $debrev_limit_key {
+    1 "";
+    default $binary_remote_addr;
+}
+{% else %}
+map $remote_addr $debrev_limit_key {
+    default $binary_remote_addr;
+}
+{% endif %}
+limit_req_zone $debrev_limit_key zone=debrev_req:10m rate={{ sec.rate }}r/s;
+{% for r in extra_rates %}
+limit_req_zone $debrev_limit_key zone=debrev_req_{{ r }}:10m rate={{ r }}r/s;
+{% endfor %}
+limit_conn_zone $debrev_limit_key zone=debrev_conn:10m;
+limit_req_status 429;
+limit_conn_status 429;
+{% endif %}
+{% if access_log %}
+
+# Statistics for the debrev Health page (JSON lines, query strings left out). Debian's logrotate rotates it with the other nginx logs.
+log_format debrev_json escape=json '{{ log_format }}';
+access_log {{ access_log }} debrev_json buffer=32k flush=5s;
+{% endif %}
+{% for c in caches %}
+proxy_cache_path {{ c.dir }} levels=1:2 keys_zone={{ c.zone }}:10m max_size={{ c.max_size }} inactive=1d use_temp_path=off;
+{% endfor %}
+
+# Unknown host names (including requests by bare IP) get no answer at all.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    # used by keepalived and 'debrev drain': which node answers? (private networks only)
+    location = /.debrev-health {
+        access_log off;
+        allow 127.0.0.0/8;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        allow ::1;
+        allow fc00::/7;
+        deny all;
+        default_type text/plain;
+        return 200 "ok {{ node_name }}\n";
+    }
+    location / {
+        return 444;
+    }
+}
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}

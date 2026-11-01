@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "logo.html" import logo %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<form method="post" action="/login" class="card narrow">
+  <div class="logo" role="img" aria-label="debrev">
+    {{ logo(84) }}
+    <h1>debrev <small>{{ node }}</small></h1>
+  </div>
+  {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+  {% if no_users %}<div class="flash warn">No accounts yet. On the server run <code>debrev user add NAME</code>.</div>{% endif %}
+  <label>User <input name="user" autocomplete="username" autocapitalize="none" required autofocus></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <label>Code <small>(only if two-factor is on)</small> <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6"></label>
+  <button class="primary wide">Sign in</button>
+</form>
+{% endblock %}

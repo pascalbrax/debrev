@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block body %}
+<div class="bar"><h1>{{ title }}</h1><a class="btn primary" href="/files/{{ kind }}/_new">+ New</a></div>
+<p class="muted small">Allow/deny lists and basic-auth users that hosts can pick.</p>
+<div class="tablewrap">
+<table class="t">
+  <thead><tr><th>Name</th><th>Description</th></tr></thead>
+  <tbody>
+{% for r in rows %}<tr><td class="nw"><a class="dom" href="/files/{{ kind }}/{{ r.name }}">{{ r.name }}</a></td><td class="sub">{{ r.info }}</td></tr>
+{% else %}<tr><td colspan="2" class="muted">Nothing here yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

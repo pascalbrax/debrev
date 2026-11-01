@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs after keepalived stops for ANY reason (systemd ExecStopPost). If keepalived was killed
+# hard it cannot remove the virtual IP itself, and the twin would take over while this node
+# still answers for the same address. Remove it here.
+conf=/etc/keepalived/keepalived.conf
+[ -r "$conf" ] || exit 0
+awk '/virtual_ipaddress/ {f=1; next} f && /}/ {f=0} f && NF {print $1, $3}' "$conf" | while read -r addr dev; do
+  [ -n "$addr" ] && [ -n "$dev" ] && ip addr del "$addr" dev "$dev" 2>/dev/null
+done
+exit 0

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Entry point: works from any checkout location.
+DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+PYTHONPATH="$DIR" exec python3 -m debrev "$@"

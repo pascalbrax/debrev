@@ -1,0 +1,12 @@
+#!/usr/bin/python3 -I
+"""Forced command for the peer's SSH key (see authorized_keys written by
+`debrev peer authorize`). Understands only a few fixed requests."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from debrev import peer  # noqa: E402
+from debrev.paths import Paths  # noqa: E402
+
+sys.exit(peer.serve(Paths(), os.environ.get("SSH_ORIGINAL_COMMAND", "")))

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+{% block body %}
+<h1>History</h1>
+<p class="small muted">Every change is a version shared with the twin. Rolling back creates a new version; it goes live when you apply.</p>
+<div class="tablewrap">
+<table class="t">
+  <thead><tr><th>Version</th><th>Change</th><th class="opt">By</th><th class="opt">When</th><th></th></tr></thead>
+  <tbody>
+{% for r in rows %}
+  <tr>
+    <td class="mono nw"><a href="/history/{{ r.rev[:12] }}">{{ r.rev[:8] }}</a></td>
+    <td>{{ r.message }}
+      {% if loop.first %}<span class="pill info">newest</span>{% endif %}
+      {% if r.rev == applied %}<span class="pill ok">live</span>{% endif %}</td>
+    <td class="opt">{{ r.author }}</td>
+    <td class="opt mono nw">{{ r.date[:16]|replace("T", " ") }}</td>
+    <td class="nw">{% if not loop.first %}
+      <form method="post" action="/history/{{ r.rev[:12] }}/rollback" data-confirm="Restore the configuration as of {{ r.rev[:8] }}?" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">Restore</button></form>{% endif %}</td>
+  </tr>
+{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

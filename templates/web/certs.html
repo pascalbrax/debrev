@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Certificates{% endblock %}
+{% block body %}
+<h1>Certificates</h1>
+<p class="small muted">Let's Encrypt server: <b>{{ acme.server }}</b> · contact: {{ acme.email or "not set" }} · automatic issuing: {{ "on" if acme.auto else "off" }}. <a href="/settings">Change</a></p>
+<section class="card" id="progress" data-job="{{ job }}" hidden aria-live="polite">
+  <h2 id="p-title">Working…</h2>
+  <progress id="p-bar" max="1" value="0"></progress>
+  <p class="small" id="p-text"></p>
+  <ul class="list steps" id="p-items"></ul>
+  <details><summary>Details</summary><pre class="out" id="p-log"></pre></details>
+  <div class="actions"><button type="button" class="primary" id="p-reload" hidden>Reload page</button></div>
+</section>
+<form method="post" id="certform">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="bar"><label class="check"><input type="checkbox" data-select-all="#certlist input[name=name]"> select all</label>
+  <span class="small muted">Tick certificates, then "Renew selected".</span></div>
+<div class="tablewrap">
+<table class="t" id="certlist">
+  <thead><tr><th class="pick"></th><th>Certificate</th><th class="opt">Source</th><th class="num">Expires</th><th class="num opt">Days</th><th>State</th><th></th></tr></thead>
+  <tbody>
+{% for c in rows %}
+  <tr>
+    <td class="pick">{% if c.kind != "custom" %}<input type="checkbox" name="name" value="{{ c.name }}" aria-label="Select {{ c.name }}">{% endif %}</td>
+    <td><b>{{ c.name }}</b>{% if c.domains|length > 1 %}<span class="sub inline">+ {{ c.domains[1:]|join(", ") }}</span>{% endif %}
+      {% if c.needs and c.state != "missing" %}<span class="sub">needs: {{ c.needs }}</span>{% endif %}
+      {% if c.last_error %}<span class="sub bad" title="{{ c.last_error }}">last error: {{ c.last_error|truncate(120) }}{% if c.next_try %} · retry after {{ c.next_try[:16]|replace("T", " ") }}Z{% endif %}</span>{% endif %}</td>
+    <td class="opt nw">{% if c.kind == "custom" %}<span class="pill info">own certificate</span>{% else %}LE {{ "DNS-01" if c.challenge == "dns" else "HTTP-01" }}{% endif %}{% if c.staging %} <span class="pill warn">staging</span>{% endif %}</td>
+    <td class="num mono">{{ c.expires or "-" }}</td>
+    <td class="num opt mono">{{ c.days_left if c.expires else "-" }}</td>
+    <td class="nw"><span class="pill {{ 'ok' if c.state == 'ok' else 'warn' if c.state == 'expiring' else 'bad' }}">{{ c.state }}</span></td>
+    <td class="nw">{% if c.kind == "custom" %}<a class="btn small" href="/hosts/{{ c.domains[0] }}#owncert">Edit certificate</a>{% endif %}</td>
+  </tr>
+{% else %}<tr><td colspan="7" class="muted">No host uses HTTPS yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="card actions">
+  <button name="action" value="selected" class="primary" data-confirm="Renew the selected certificates now? Each one asks Let's Encrypt for a new certificate (rate limits apply).">Renew selected</button>
+  <button name="action" value="issue">Request missing</button>
+  <button name="action" value="renew">Renew due</button>
+  <button name="action" value="force" data-confirm="Ignore the retry delay and ask Let's Encrypt now for every failing certificate? (rate limits apply)">Retry failed</button>
+</div>
+</form>
+{% endblock %}

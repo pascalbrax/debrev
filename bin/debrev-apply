@@ -1,0 +1,46 @@
+#!/usr/bin/python3 -I
+"""Root-side entry point for sudo. Accepts only one fixed flag from MODES, and
+ignores the caller's environment so it cannot be redirected elsewhere."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from debrev import apply as ap, certs  # noqa: E402
+from debrev.paths import Paths  # noqa: E402
+
+args = sys.argv[1:]
+MODES = [[], ["--check"], ["--refresh-dns"], ["--certs"], ["--certs-force"], ["--certs-auto"], ["--renew"], ["--cert-publish"], ["--cert-push"], ["--cert-import"], ["--cert-upload"], ["--certs-select"]]
+if args not in MODES:
+    sys.exit("usage: debrev-apply [--check | --refresh-dns | --certs | --certs-force | --certs-auto | --renew | --cert-publish | --cert-push | --cert-import | --cert-upload | --certs-select]")
+p = Paths()
+if args == ["--certs"] or args == ["--certs-force"] or args == ["--certs-auto"]:
+    res = certs.run(p, force=args == ["--certs-force"], auto=args == ["--certs-auto"], progress=args != ["--certs-auto"])
+elif args == ["--cert-publish"]:
+    res = certs.publish_and_reload(p)
+elif args == ["--cert-push"]:
+    res = certs.push(p)
+elif args == ["--cert-import"]:
+    res = certs.import_and_apply(p, sys.stdin.buffer.read(20_000_000))
+elif args == ["--cert-upload"]:
+    import json
+    try:
+        req = json.loads(sys.stdin.buffer.read(200_000))
+        res = certs.upload_custom(p, str(req["name"]), str(req["fullchain"]).encode(), str(req["privkey"]).encode())
+    except (ValueError, KeyError, TypeError) as e:
+        res = ap.Result(False, f"bad request: {e}")
+elif args == ["--certs-select"]:
+    import json
+    try:
+        names = [str(x) for x in json.loads(sys.stdin.buffer.read(20_000))["names"]][:200]
+        res = certs.run_selected(p, names)
+    except (ValueError, KeyError, TypeError) as e:
+        res = ap.Result(False, f"bad request: {e}")
+elif args == ["--renew"]:
+    res = certs.renew(p)
+else:
+    res = ap.apply(p, check_only=args == ["--check"], dns_only=args == ["--refresh-dns"])
+for w in res.warnings:
+    print(f"warning: {w}", file=sys.stderr)
+print(res.message, file=sys.stdout if res.ok else sys.stderr)
+sys.exit(0 if res.ok else 1)

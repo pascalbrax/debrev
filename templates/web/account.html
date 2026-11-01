@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Account{% endblock %}
+{% block body %}
+<h1>Account <small>{{ s.user }}</small></h1>
+<form method="post" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="password">
+  <h2>Change password</h2>
+  <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+  <label>New password <small>(at least 10 characters)</small> <input type="password" name="new" autocomplete="new-password" minlength="10" required></label>
+  <label>New password again <input type="password" name="new2" autocomplete="new-password" minlength="10" required></label>
+  <div class="actions"><button class="primary">Change password</button></div>
+</form>
+<div class="card">
+  <h2>Two-factor login</h2>
+  {% if totp_enabled %}
+  <p><span class="pill ok">on</span></p>
+  <form method="post" data-confirm="Turn off two-factor login?">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="totp_off">
+    <label>Current password <input type="password" name="current" required></label>
+    <button class="bad">Turn off</button>
+  </form>
+  {% else %}
+  <p class="small">Add this key to an authenticator app (Aegis, FreeOTP, Google Authenticator …) as a time-based account, then enter a code to confirm.</p>
+  <p><code class="break">{{ secret }}</code></p>
+  <p class="small muted break">{{ uri }}</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="totp_on"><input type="hidden" name="token" value="{{ token }}">
+    <label>Current password <input type="password" name="current" required></label>
+    <label>Code from the app <input name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required></label>
+    <button class="primary">Turn on</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

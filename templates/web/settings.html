@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<form method="post" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <section class="card">
+    <h2>Let's Encrypt</h2>
+    <label>Contact e-mail <input type="email" name="email" value="{{ acme.email or '' }}" autocapitalize="none"></label>
+    <label>Server
+      <select name="server">{% for o in ["production", "staging", "custom"] %}<option {% if acme.server == o %}selected{% endif %}>{{ o }}</option>{% endfor %}</select></label>
+    <p class="small muted">Use <b>staging</b> first: generous limits, but browsers do not trust its certificates.</p>
+    <label>Custom directory URL <small>(only for "custom")</small> <input name="directory_url" value="{{ acme.directory_url or '' }}" autocapitalize="none"></label>
+    <label class="check"><input type="checkbox" name="auto" {% if acme.auto %}checked{% endif %}> Request missing certificates automatically</label>
+  </section>
+
+  <section class="card">
+    <h2>DNS providers <small>for DNS-01 and wildcard certificates</small></h2>
+    <p class="small muted">One entry per DNS host your domains live at. A host uses the <b>default</b> provider unless you pick another in its settings. The API token file must exist on a server (mode 600); debrev copies it to the twin. Install the plugin with <code>apt install python3-certbot-dns-&lt;plugin&gt;</code>.</p>
+    {% for r in providers %}
+    <fieldset class="prov">
+      <legend>{{ r.name or "new provider" }}</legend>
+      <div class="tags status">
+        <span class="pill {{ 'ok' if r.installed else 'bad' }}">{{ "plugin installed" if r.installed else "plugin NOT installed" }}</span>
+        <span class="pill {{ 'ok' if r.file else 'bad' }}">{{ ("token file present, " ~ r.file_time) if r.file else "token file not found" }}</span>
+        {% if r.default %}<span class="pill info">default</span>{% endif %}
+        {% if r.used %}<span class="pill">used by {{ r.used|length }} host{{ "" if r.used|length == 1 else "s" }}</span>{% endif %}
+      </div>
+      <div class="two">
+        <label>Name <input name="p_name" value="{{ r.name }}" autocapitalize="none" required></label>
+        <label>certbot plugin <input name="p_plugin" value="{{ r.plugin }}" autocapitalize="none" placeholder="cloudflare, infomaniak …" required></label>
+      </div>
+      <div class="two">
+        <label>Token file on the servers <input name="p_credentials" value="{{ r.credentials }}" autocapitalize="none" placeholder="/etc/letsencrypt/NAME.ini" required></label>
+        <label>Wait for DNS <small>(seconds)</small> <input name="p_wait" inputmode="numeric" value="{{ r.wait }}"></label>
+      </div>
+      <div class="actions inline-opts">
+        <label class="check"><input type="radio" name="p_default" value="{{ loop.index0 }}" {% if r.default %}checked{% endif %}> Default provider</label>
+        <label class="check"><input type="checkbox" name="p_remove" value="{{ loop.index0 }}"> Remove</label>
+      </div>
+      {% if r.used %}<p class="small muted">Used by: {{ r.used|join(", ") }}</p>{% endif %}
+    </fieldset>
+    {% endfor %}
+    <fieldset class="prov new">
+      <legend>Add a provider</legend>
+      <div class="two">
+        <label>Name <input name="p_name" autocapitalize="none" placeholder="e.g. cloudflare"></label>
+        <label>certbot plugin <input name="p_plugin" autocapitalize="none" placeholder="cloudflare, infomaniak …"></label>
+      </div>
+      <div class="two">
+        <label>Token file on the servers <input name="p_credentials" autocapitalize="none" placeholder="/etc/letsencrypt/cloudflare.ini"></label>
+        <label>Wait for DNS <small>(seconds)</small> <input name="p_wait" inputmode="numeric" value="60"></label>
+      </div>
+      <p class="small muted">Leave empty to add nothing. {% if not providers %}The first provider becomes the default.{% endif %}</p>
+    </fieldset>
+  </section>
+
+  <section class="card">
+    <h2>Security <small>abuse protection</small></h2>
+    <label class="check"><input type="checkbox" name="rate_limit" {% if security.rate_limit %}checked{% endif %}> Limit requests per client address</label>
+    <div class="grid">
+      <label>Requests per second <input type="number" name="rate" min="1" max="1000" value="{{ security.rate }}"></label>
+      <label>Burst <input type="number" name="burst" min="0" max="10000" value="{{ security.burst }}"></label>
+      <label>Simultaneous connections <input type="number" name="connections" min="1" max="10000" value="{{ security.connections }}"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="lan_exempt" {% if security.lan_exempt %}checked{% endif %}> Never limit local networks (10.x, 172.16-31.x, 192.168.x)</label>
+    <p class="small muted">Over the limit a visitor gets <code>429 Too Many Requests</code>. Defaults are generous so normal pages, Proxmox consoles and photo galleries are not affected; a host with huge transfers (speed tests) can switch limiting off on its own page. See the <a href="/security">Security</a> checklist.</p>
+  </section>
+
+  <div class="actions"><button class="primary">Save settings</button></div>
+</form>
+
+<section class="card">
+  <h2>Failover</h2>
+  <p>Virtual IP: <code>{{ cluster.vip or "not set" }}</code> · VRRP id {{ cluster.vrid }}</p>
+  <p class="small muted">Change with <code>debrev cluster set</code> on a server.</p>
+</section>
+{% endblock %}

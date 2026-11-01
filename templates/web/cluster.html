@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Cluster{% endblock %}
+{% block body %}
+<h1>Cluster</h1>
+{% macro node(n, label) %}
+<section class="card">
+  <h2>{{ n.name }} <small>{{ label }}</small></h2>
+  <p><span class="pill {{ 'ok' if n.vrrp == 'MASTER' else 'info' }}">{{ n.vrrp or "VRRP off" }}</span>
+     <span class="pill {{ 'ok' if n.healthy else 'bad' }}">{{ "healthy" if n.healthy else "unhealthy" }}</span>
+     {% if n.drained %}<span class="pill warn">drained</span>{% endif %}</p>
+  <p class="small muted">priority {{ n.priority }}{% if not n.healthy %} · {{ n.health }}{% endif %}</p>
+</section>
+{% endmacro %}
+{% if not d.vip %}<div class="flash warn">No virtual IP is configured (<code>debrev cluster set --vip IP</code>).</div>{% endif %}
+{% if d.vip %}<p>Virtual IP <code>{{ d.vip }}</code> is served by <b>{{ d.vip_owner or "nobody!" }}</b>.</p>{% endif %}
+<div class="grid">
+  {% if d.me %}{{ node(d.me, "this server") }}{% endif %}
+  {% if d.twin %}{{ node(d.twin, "twin " ~ d.peer) }}
+  {% elif d.twin_error %}<section class="card"><h2>Twin</h2><p class="bad">unreachable: {{ d.twin_error }}</p></section>{% endif %}
+</div>
+{% if d.sync %}<p class="small">Config sync: <b>{{ d.sync.state or "never run" }}</b>{% if d.sync.message %} – {{ d.sync.message }}{% endif %} <small class="muted">(checked {{ d.sync.updated or "never" }})</small></p>{% endif %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2>Upgrade this server</h2>
+  <p class="small muted">Drain moves the virtual IP to the twin (it refuses if the twin is not healthy). Upgrade and reboot, then restore. This page stays reachable on this server's own address.</p>
+  <div class="actions">
+    {% if d.me and d.me.drained %}
+    <button name="action" value="restore" class="primary">Restore this server</button>
+    {% else %}
+    <button name="action" value="drain" data-confirm="Move all traffic to the twin so this server can be upgraded?">Drain this server</button>
+    {% endif %}
+    <button name="action" value="sync">Sync now</button>
+  </div>
+</form>
+{% endblock %}
