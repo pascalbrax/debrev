@@ -943,8 +943,10 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
     @app.get("/security")
     async def security_page(request: Request, s=Depends(session)):
         from . import security as sc
+        from . import fail2ban as f2b
         checks = await run_in_threadpool(sc.audit, p)
-        return page(request, "security.html", s, checks=checks, verdict=sc.verdict(checks))
+        bans = await run_in_threadpool(f2b.overview, p)
+        return page(request, "security.html", s, checks=checks, verdict=sc.verdict(checks), f2b=bans)
 
     # ---------------------------------------------------------------- account
     @app.get("/account")

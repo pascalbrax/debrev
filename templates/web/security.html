@@ -17,5 +17,30 @@
   {% endfor %}
   </tbody>
 </table>
+{% if f2b.installed %}
+<section class="card">
+  <h2>Banned by fail2ban <small>{{ f2b.bans|length }} on this server now</small></h2>
+  {% if not f2b.readable %}
+  <p class="muted">fail2ban's log cannot be read, so the list is unavailable. The web service needs group <code>adm</code> (install.sh --update sets it).</p>
+  {% elif f2b.bans %}
+  <div class="tablewrap">
+  <table class="t">
+    <thead><tr><th>Address</th><th>Banned since</th><th>Rate limited on</th></tr></thead>
+    <tbody>
+    {% for b in f2b.bans %}
+    <tr>
+      <td class="mono">{{ b.ip }}</td><td class="nw">{{ b.since }}</td>
+      <td class="break">{% for h in b.hosts %}<a href="/hosts/{{ h.host }}">{{ h.host }}</a> <small class="muted">{{ h.hits }}&times;</small>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">no host recorded</span>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted">An address is banned after it hit the rate limit 30 times in a minute, and is released by itself (default 1 hour). To release one now: <code>sudo fail2ban-client set {{ f2b.jail }} unbanip ADDRESS</code>. Each server keeps its own list.</p>
+  {% else %}
+  <p class="muted">Nobody is banned right now.</p>
+  {% endif %}
+</section>
+{% endif %}
 <p class="small muted">Rate limits are set under <a href="/settings">Settings</a>. Only ports 80 and 443 should ever be forwarded to the virtual IP.</p>
 {% endblock %}

@@ -14,7 +14,8 @@ from debrev.paths import Paths  # noqa: E402
 def paths(tmp_path):
     p = Paths(etc=tmp_path / "etc", lib=tmp_path / "lib", cache=tmp_path / "cache",
               letsencrypt=tmp_path / "le", reload_cmd=("true",), health_check=False,
-              access_log=tmp_path / "log" / "debrev.log")
+              access_log=tmp_path / "log" / "debrev.log",
+              fail2ban_log=tmp_path / "log" / "fail2ban.log", fail2ban_jail=tmp_path / "etc-f2b" / "debrev.local")
     (tmp_path / "log").mkdir()
     st.init(p)
     return p

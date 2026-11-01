@@ -29,7 +29,8 @@ def source(paths):
 
 def fresh(tmp_path):
     p = Paths(etc=tmp_path / "e2", lib=tmp_path / "l2", cache=tmp_path / "c2", letsencrypt=tmp_path / "le2",
-              reload_cmd=("true",), health_check=False)
+              reload_cmd=("true",), health_check=False,
+              access_log=tmp_path / "l2.log", fail2ban_log=tmp_path / "f2.log", fail2ban_jail=tmp_path / "f2.local")
     st.init(p)
     return p
 

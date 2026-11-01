@@ -183,6 +183,20 @@ def limited(p: Paths, rng: str = "24h", now: float | None = None) -> list[dict]:
     return [dict(host=h, ip=ip, hits=n, ok=ok.get(ip, (0, 0))[0], total=ok.get(ip, (0, 0))[1]) for h, ip, n in rows]
 
 
+def hosts_hit_by(p: Paths, ips: list[str], rng: str = "7d", now: float | None = None) -> dict[str, list[dict]]:
+    """For each address: the hosts it was rate limited on ({host, hits}), busiest first."""
+    if not ips:
+        return {}
+    start, _, _ = _since(rng, now)
+    out: dict[str, list[dict]] = {ip: [] for ip in ips}
+    with _db(p) as db:
+        q = ",".join("?" * len(ips))
+        for host, ip, n in db.execute(f"SELECT host, ip, SUM(n) FROM lim WHERE hour >= ? AND ip IN ({q}) GROUP BY host, ip ORDER BY 3 DESC",
+                                      (start // 3600 * 3600, *ips)):
+            out[ip].append({"host": host, "hits": n})
+    return out
+
+
 def recent(p: Paths, count: int = 100, only_errors: bool = False) -> list[dict]:
     """The newest requests, read from the end of the access log."""
     try:

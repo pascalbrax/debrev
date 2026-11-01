@@ -30,6 +30,8 @@ class Paths:
     health_port: int = 80
     keep_releases: int = 10
     access_log: Path = Path("/var/log/nginx/debrev.log")
+    fail2ban_log: Path = Path("/var/log/fail2ban.log")
+    fail2ban_jail: Path = Path("/etc/fail2ban/jail.d/debrev.local")
 
     @property
     def node_file(self) -> Path:
@@ -110,6 +112,8 @@ class Paths:
             p.cache, p.letsencrypt = r / "var/cache/debrev", r / "etc/letsencrypt"
             p.nginx_conf = r / "etc/nginx/nginx.conf"
             p.access_log = r / "var/log/nginx/debrev.log"
+            p.fail2ban_log = r / "var/log/fail2ban.log"
+            p.fail2ban_jail = r / "etc/fail2ban/jail.d/debrev.local"
             p.reload_cmd = ("true",)
             p.keepalived_conf = r / "etc/keepalived/keepalived.conf"
             p.keepalived_cmd = p.keepalived_reload = ("true",)
