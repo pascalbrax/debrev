@@ -506,3 +506,31 @@ def test_multiline_snippet_is_stored_as_readable_block(client, paths):
     client.post("/hosts/new", data={**base, "domain": "a.example.com"})
     text = (paths.state / "hosts" / "a.example.com.yaml").read_text()
     assert "custom_snippet: |" in text and "\n  location /b" in text
+
+
+def test_export_download_and_import_preview_then_save(client, paths):
+    from debrev import portable
+    login(client)
+    (paths.state / "hosts" / "a.example.com.yaml").write_text("domain: a.example.com\nupstream: http://10.0.0.1:3000\n")
+    st.commit(paths, "seed", "t")
+    r = client.get("/export")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and "a.example.com" in r.text
+    assert "no-store" in r.headers["cache-control"]
+    bundle = r.text.replace("a.example.com", "n.example.com")
+    tok = csrf_of(client, "/import")
+    assert client.post("/import/preview", data={"csrf": "x", "bundle": bundle}).status_code == 403
+    r = client.post("/import/preview", data={"csrf": tok, "bundle": bundle})
+    assert r.status_code == 200 and "n.example.com" in r.text and "Save 1 change" in r.text
+    assert not (paths.state / "hosts" / "n.example.com.yaml").exists()        # a preview saves nothing
+    r = client.post("/import/apply", data={"csrf": tok, "bundle": bundle})
+    assert r.status_code == 200 and "Done." in r.text
+    assert (paths.state / "hosts" / "n.example.com.yaml").exists()
+    r = client.post("/import/preview", data={"csrf": tok, "bundle": "hosts: not-a-list"})
+    assert r.status_code == 400
+    r = client.post("/import/preview", data={"csrf": tok}, files={"file": ("x.yaml", b"hosts: [{domain: u.example.com, upstream: 'http://10.0.0.9:1'}]")})
+    assert r.status_code == 200 and "u.example.com" in r.text
+
+
+def test_import_page_needs_login(client):
+    for url in ("/export", "/import"):
+        assert client.get(url).status_code == 303

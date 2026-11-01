@@ -506,52 +506,52 @@ def cmd_status(a, p):
         print(f"certificates: {len(rows) - len(bad)}/{len(rows)} ok" + (f"; attention: {', '.join(bad)}" if bad else ""))
 
 
+def cmd_export(a, p):
+    """Write hosts, access lists and settings to one YAML file (no certificates, keys or tokens)."""
+    from . import portable
+    _load_or_exit(p)
+    text = portable.export_text(p)
+    if a.output and a.output != "-":
+        Path(a.output).write_text(text)
+        print(f"exported to {a.output}")
+    else:
+        sys.stdout.write(text)
+
+
 def cmd_import(a, p):
-    """Import hosts from a YAML file ({hosts: [ {domain, upstream, ...}, ... ]}). Dry run unless --write."""
-    from .schema import HOST_KEYS
+    """Import hosts (and access lists; settings only with --settings) from an export file. Dry run unless --write."""
+    from . import portable
     src = Path(a.file)
     try:
-        doc = st._load_yaml(src)
-    except (OSError, st.StateError) as e:
+        text = src.read_text()
+    except OSError as e:
         sys.exit(f"cannot read {src}: {e}")
-    entries = doc.get("hosts") if isinstance(doc, dict) else None
-    if not isinstance(entries, list):
-        sys.exit("expected a top-level 'hosts:' list")
-    _, acls, _, _ = st.load(p)
-    todo, problems = [], 0
-    for e in entries:
-        raw = {k: v for k, v in e.items() if k in HOST_KEYS}
-        dom = str(raw.get("domain", "")).lower()
-        f = p.state / "hosts" / f"{dom}.yaml"
-        h, errs = normalise_host(raw, acls, dom or "?")
-        if f.exists():
-            print(f"skip    {dom}: already exists")
-        elif errs:
-            problems += 1
-            print(f"INVALID {dom}: " + "; ".join(errs))
-        else:
-            todo.append((f, raw, h))
-    names = dns.hostnames([h for _, _, h in todo])
-    bad = {n for n in names if not _resolves(n)}
-    for f, raw, h in todo:
-        miss = [n for n in dns.hostnames([h]) if n in bad]
-        tags = [] if not h["websockets"] else ["websockets"]
-        print(f"import  {h['domain']:38} -> {h['upstream']:32} {' '.join(tags)}"
-              + (f"   !! upstream name does not resolve here: {', '.join(miss)}" if miss else ""))
-    print(f"\n{len(todo)} to import, {problems} invalid, {len(bad)} upstream name(s) not resolvable from this server.")
-    if not a.write:
-        print("dry run: nothing written. Add --write to save them (they are not live until 'debrev apply').")
-        return
-    if problems:
-        sys.exit("fix the invalid entries first")
-    for f, raw, h in todo:
-        f.write_text(st.dump_yaml(raw))
-    errs = _validate_all(p)
+    doc, errs = portable.parse(text)
     if errs:
-        for f, _, _ in todo:
-            f.unlink(missing_ok=True)
-        sys.exit("import rolled back:\n  " + "\n  ".join(errs))
-    st.commit(p, f"import {len(todo)} host(s) from {src.name}", _author())
+        sys.exit(f"{src}: " + "; ".join(errs))
+    _load_or_exit(p)
+    pl = portable.plan(p, doc, overwrite=a.overwrite, settings=a.settings)
+    todo = [i for i in pl["items"] if i["kind"] == "host" and i["action"] in ("new", "replace")]
+    bad_names: set[str] = set()
+    if todo:
+        _, acls, _, _ = st.load(p)
+        hs = [normalise_host(dict(yaml.safe_load(pl["writes"][p.state / "hosts" / f"{i['name']}.yaml"])), acls, i["name"])[0]
+              for i in todo]
+        bad_names = {n for n in dns.hostnames([h for h in hs if h]) if not _resolves(n)}
+    for i in pl["items"]:
+        tag = {"new": "import ", "replace": "replace", "skip": "skip   ", "invalid": "INVALID"}[i["action"]]
+        print(f"{tag} {i['kind']:11} {i['name']:38} {i['note']}")
+    n_new = sum(1 for i in pl["items"] if i["action"] in ("new", "replace"))
+    print(f"\n{n_new} to write, {pl['problems']} invalid, {sum(1 for i in pl['items'] if i['action'] == 'skip')} skipped"
+          + (f", {len(bad_names)} upstream name(s) not resolvable from this server: {', '.join(sorted(bad_names))}" if bad_names else "") + ".")
+    if not a.write:
+        print("dry run: nothing written. Add --write to save (not live until 'debrev apply').")
+        return
+    ok, msg = portable.apply(p, pl, _author(), src.name)
+    print(msg)
+    if not ok:
+        sys.exit(1)
+
     print(f"imported {len(todo)} host(s). Review in the web interface, then apply.")
 
 
@@ -742,9 +742,14 @@ def build_parser() -> argparse.ArgumentParser:
         x = host.add_parser(name)
         x.add_argument("domain")
         x.set_defaults(fn=fn)
-    im = sub.add_parser("import", help="import hosts from a YAML file (dry run unless --write)")
+    ex = sub.add_parser("export", help="write hosts, access lists and settings to one YAML file (no certificates or keys)")
+    ex.add_argument("-o", "--output", help="file to write (default: standard output)")
+    ex.set_defaults(fn=cmd_export)
+    im = sub.add_parser("import", help="import hosts and access lists from an export file (dry run unless --write)")
     im.add_argument("file")
-    im.add_argument("--write", action="store_true")
+    im.add_argument("--write", action="store_true", help="save the changes (they are not live until 'debrev apply')")
+    im.add_argument("--overwrite", action="store_true", help="replace hosts and access lists that already exist (default: skip them)")
+    im.add_argument("--settings", action="store_true", help="also import the settings sections (acme, cluster, security)")
     im.set_defaults(fn=cmd_import)
     us = sub.add_parser("user", help="web interface accounts")
     us.add_argument("action", choices=["add", "passwd", "rm", "list", "no2fa"])

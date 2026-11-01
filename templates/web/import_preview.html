@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Import preview{% endblock %}
+{% block body %}
+<div class="bar"><h1>Import preview</h1><a class="btn" href="/import">Back</a></div>
+<div class="tablewrap">
+<table class="t">
+  <thead><tr><th>What</th><th>Name</th><th>Action</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td>{{ i.kind }}</td><td class="mono break">{{ i.name }}</td>
+    <td class="nw"><span class="pill {{ {'new': 'ok', 'replace': 'warn', 'skip': 'info', 'invalid': 'bad'}[i.action] }}">{{ i.action }}</span></td>
+    <td class="break">{{ i.note }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if problems %}
+<div class="flash err" role="alert">{{ problems }} entr{{ "y is" if problems == 1 else "ies are" }} invalid. Fix the file and preview again; nothing was saved.</div>
+{% elif count %}
+<form method="post" action="/import/apply">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <textarea name="bundle" hidden>{{ bundle }}</textarea>
+  {% if overwrite %}<input type="hidden" name="overwrite" value="1">{% endif %}
+  {% if settings %}<input type="hidden" name="settings" value="1">{% endif %}
+  <p class="small muted">Saving only stores the changes. Use <b>Apply now</b> afterwards to make them live.</p>
+  <button class="btn primary" type="submit">Save {{ count }} change{{ "" if count == 1 else "s" }}</button>
+</form>
+{% else %}
+<p class="muted">Nothing to import.</p>
+{% endif %}
+{% endblock %}

@@ -27,7 +27,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.concurrency import run_in_threadpool
 
-from . import __version__, auth, certs as cr, cluster as cl_, node as nodemod, peer as pr_, state as st, sysinfo, traffic as tf
+from . import __version__, auth, portable, certs as cr, cluster as cl_, node as nodemod, peer as pr_, state as st, sysinfo, traffic as tf
 from .paths import APP_DIR, Paths
 from .schema import DOMAIN_RE, NAME_RE, normalise_host
 
@@ -307,6 +307,55 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
     def hosts_list(request: Request, s=Depends(session)):
         hosts, _, errors, _ = state_load()
         return page(request, "hosts.html", s, hosts=[host_summary(h) for h in sorted(hosts, key=lambda x: x["domain"])], errors=errors)
+
+    # ---------------------------------------------------------------- export / import
+    @app.get("/export")
+    def export_file(s=Depends(session)):
+        _, _, errors, _ = state_load()
+        name = "debrev-export-" + datetime.now().strftime("%Y%m%d-%H%M") + ".yaml"
+        return PlainTextResponse(portable.export_text(p), media_type="text/yaml",
+                                 headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+    @app.get("/import")
+    def import_form(request: Request, s=Depends(session)):
+        return page(request, "import.html", s)
+
+    async def read_bundle(form) -> str:
+        up = form.get("file")
+        if up is not None and hasattr(up, "read"):
+            data = await up.read(portable.MAX_BYTES + 1)
+            if data:
+                return data.decode("utf-8", "replace")
+        return str(form.get("bundle") or "")
+
+    def make_plan(text: str, form):
+        doc, errs = portable.parse(text)
+        if errs:
+            return None, errs
+        return portable.plan(p, doc, overwrite=bool(form.get("overwrite")), settings=bool(form.get("settings"))), []
+
+    @app.post("/import/preview")
+    async def import_preview(request: Request):
+        s, form = await post(request)
+        text = await read_bundle(form)
+        if not text.strip():
+            return page(request, "import.html", s, status=400, error="Choose a file or paste its contents.")
+        pl, errs = await run_in_threadpool(make_plan, text, form)
+        if errs:
+            return page(request, "import.html", s, status=400, error="; ".join(errs))
+        writable = [i for i in pl["items"] if i["action"] in ("new", "replace")]
+        return page(request, "import_preview.html", s, items=pl["items"], problems=pl["problems"], count=len(writable),
+                    bundle=text, overwrite=bool(form.get("overwrite")), settings=bool(form.get("settings")))
+
+    @app.post("/import/apply")
+    async def import_apply(request: Request):
+        s, form = await post(request)
+        text = str(form.get("bundle") or "")
+        pl, errs = await run_in_threadpool(make_plan, text, form)       # planned again: the preview is never trusted
+        if errs:
+            return result(request, s, "Import", False, "; ".join(errs), back="/import")
+        ok, msg = await run_in_threadpool(portable.apply, p, pl, s["user"], "web upload")
+        return result(request, s, "Import", ok, msg, back="/hosts")
 
     def raw_host(domain: str) -> tuple[Path, dict]:
         f = p.state / "hosts" / f"{domain}.yaml"

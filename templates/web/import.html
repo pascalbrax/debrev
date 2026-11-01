@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Import{% endblock %}
+{% block body %}
+<div class="bar"><h1>Export and import</h1><a class="btn" href="/hosts">All hosts</a></div>
+
+<section class="card">
+  <h2>Export</h2>
+  <p class="small muted">One YAML file with all hosts, access lists and settings. It contains <b>no certificates, private keys, DNS tokens or logins</b>, so it is safe to keep in a repository or send to a colleague.</p>
+  <a class="btn primary" href="/export" download>Download export file</a>
+</section>
+
+<section class="card">
+  <h2>Import</h2>
+  {% if error %}<div class="flash err" role="alert">{{ error }}</div>{% endif %}
+  <p class="small muted">Upload a file made by <b>Export</b> (or a plain list of hosts). You see what would change before anything is saved, and nothing goes live until you apply.</p>
+  <form method="post" action="/import/preview" enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>File <input type="file" name="file" accept=".yaml,.yml,text/yaml"></label>
+    <label>…or paste its contents <textarea name="bundle" rows="6" spellcheck="false" autocapitalize="none"></textarea></label>
+    <label class="check"><input type="checkbox" name="overwrite"> Replace hosts and access lists that already exist (otherwise they are skipped)</label>
+    <label class="check"><input type="checkbox" name="settings"> Also import the settings (Let's Encrypt, DNS providers, failover address, rate limits)</label>
+    <button class="btn primary" type="submit">Preview</button>
+  </form>
+</section>
+{% endblock %}

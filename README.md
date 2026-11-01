@@ -34,11 +34,22 @@ sudo -u debrev debrev apply            # validate -> test -> swap -> reload -> h
 sudo -u debrev debrev apply --check    # test only, changes nothing
 debrev host list | host show <d> | host edit <d> | host rm <d>
 debrev history | diff [rev] | rollback [rev] | status | render | validate
-debrev import hosts.yaml [--write]     # bulk import ({hosts: [...]}); dry run unless --write
+debrev export -o config.yaml           # hosts, access lists and settings in ONE file (no certificates, keys or tokens)
+debrev import config.yaml              # preview what an import would do
+debrev import config.yaml --write      # save it (not live until 'debrev apply'); existing hosts are skipped
+         [--overwrite]                 #   ... replace hosts/access lists that already exist
+         [--settings]                  #   ... also import the settings (Let's Encrypt, DNS providers, failover, rate limits)
 debrev user add|passwd|rm|list|no2fa   # web interface accounts (uses sudo when needed)
 ```
 State lives in `/var/lib/debrev/state` (a git repo of YAML: `hosts/`, `access_lists/`, `settings.yaml`).
 Every change is a commit; `apply` refuses to run with uncommitted changes.
+
+### Moving a configuration between servers
+`Hosts > Export / import` in the web interface does the same: download one YAML file, upload it on another server,
+check the preview, save, then **Apply now**. The file never contains certificates (a new server requests its own, or
+receives them from the twin), private keys, DNS API tokens (settings only name the token *file*) or web logins, so it is
+safe to keep in a repository. Importing never touches anything until you apply, and a file that fails validation is
+rolled back completely. Plain `{hosts: [...]}` lists from older versions are still accepted.
 
 ## Host file reference
 ```yaml
