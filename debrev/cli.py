@@ -335,6 +335,20 @@ def cmd_restore(a, p):
         sys.exit(f"not restored: {e}")
 
 
+def cmd_takeover(a, p):
+    try:
+        cl_.take_over(p)
+    except cl_.ClusterError as e:
+        sys.exit(f"not taken over: {e}")
+
+
+def cmd_handback(a, p):
+    try:
+        cl_.hand_back(p)
+    except cl_.ClusterError as e:
+        sys.exit(f"not handed back: {e}")
+
+
 def cmd_peer_keygen(a, p):
     print(pr_.ensure_key(p))
 
@@ -714,6 +728,8 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--force", action="store_true")
     dr.set_defaults(fn=cmd_drain)
     sub.add_parser("restore", help="make this node eligible for the floating IP again").set_defaults(fn=cmd_restore)
+    sub.add_parser("takeover", help="make this node serve the floating IP (asks the twin to drain itself)").set_defaults(fn=cmd_takeover)
+    sub.add_parser("handback", help="put the twin back in service (the preferred node takes the floating IP again)").set_defaults(fn=cmd_handback)
     sy = sub.add_parser("sync", help="reconcile state with the twin")
     sy.add_argument("--quiet", action="store_true")
     sy.add_argument("--retry", action="store_true", help="retry a peer state that failed to apply before")

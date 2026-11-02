@@ -237,3 +237,23 @@ def test_import_validates_before_installing(tmp_path):
     assert r["message"] == "already up to date"
     older = make_pair(tmp_path / "o" if (tmp_path / "o").mkdir() is None else tmp_path, ["a.example.com", "www.a.example.com"], days=5)
     assert certs.import_certs(p, {"certs": {"a.example.com": older}}, hosts)[0]["message"] == "already up to date"
+
+
+def test_twin_may_ask_for_drain_and_restore_only_without_arguments(twins, tmp_path, monkeypatch):
+    a, _ = twins
+    calls = []
+    monkeypatch.setattr(peer.subprocess, "run", lambda cmd, **k: calls.append(cmd[1:]) or subprocess.CompletedProcess(cmd, 0, "done\n", ""))
+    assert peer.serve(a, "drain") == 0 and peer.serve(a, "restore") == 0
+    assert calls == [["drain"], ["restore"]]
+    for bad in ("drain --force", "restore now", "drain; id"):
+        assert peer.serve(a, bad) != 0, bad
+    assert calls == [["drain"], ["restore"]]
+
+
+def test_ask_twin_reports_a_refusal(twins):
+    a, _ = twins
+    nodemod.save(a, nodemod.Node(name="a", peer_address="127.0.0.2"))
+    n = nodemod.load(a)
+    assert peer.ask_twin(a, n, "drain") == "accepted"            # the fake ssh answers "accepted"
+    with pytest.raises(ValueError):
+        peer.ask_twin(a, n, "bash")

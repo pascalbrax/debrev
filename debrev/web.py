@@ -830,11 +830,13 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
     @app.post("/cluster")
     async def cluster_action(request: Request):
         s, form = await post(request)
-        args = {"drain": ["drain"], "restore": ["restore"], "sync": ["sync"]}.get(form.get("action"))
+        args = {"drain": ["drain"], "restore": ["restore"], "sync": ["sync"], "takeover": ["takeover"], "handback": ["handback"]}.get(form.get("action"))
         if not args:
             raise HTTPException(400)
         ok, out = await run_in_threadpool(cli, s, *args, timeout=180)
-        return result(request, s, args[0].capitalize(), ok, out, "/cluster")
+        titles = {"drain": "Take out of service", "restore": "Put back in service", "sync": "Sync",
+                  "takeover": "Take over traffic", "handback": "Hand back"}
+        return result(request, s, titles[args[0]], ok, out, "/cluster")
 
     # ---------------------------------------------------------------- settings (ACME)
     def plugin_installed(plugin: str) -> bool:

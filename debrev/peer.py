@@ -10,6 +10,8 @@ which understands only the handful of requests below:
   status            small JSON: head commit, state format, issuer flag
   cert-list         non-secret list of certificates we hold (name -> expiry)
   cert-import       replace/accept certificates (root helper validates them)
+  drain, restore    take this server out of / back into service (the twin asks
+                    for it: "Take over traffic" / "Hand back" in the web UI)
 
 State always moves by the *receiver* fetching and fast-forwarding, never by
 pushing into a working tree. Diverged histories are never merged silently.
@@ -121,6 +123,17 @@ def peer_status(p: Paths, n: nodemod.Node, timeout: int = 15) -> dict:
     if r.returncode != 0:
         raise PeerError((r.stderr or b"").decode(errors="replace").strip()[-200:] or f"ssh exit {r.returncode}")
     return json.loads(r.stdout)
+
+
+def ask_twin(p: Paths, n: nodemod.Node, what: str, timeout: int = 120) -> str:
+    """Ask the twin to 'drain' or 'restore' itself. Returns its output; raises PeerError on refusal."""
+    if what not in ("drain", "restore"):
+        raise ValueError(what)
+    r = remote(p, n, what, timeout=timeout)
+    text = ((r.stdout or b"").decode(errors="replace") + (r.stderr or b"").decode(errors="replace")).strip()
+    if r.returncode != 0:
+        raise PeerError(text[-300:] or f"ssh exit {r.returncode}")
+    return text
 
 
 def notify(p: Paths, n: nodemod.Node, force: bool = False) -> bool:
@@ -294,6 +307,13 @@ def serve(p: Paths, original: str, stdin=None) -> int:
         r = subprocess.run([*p.apply_cmd, "--cert-import"], input=payload, capture_output=True)
         sys.stdout.buffer.write(r.stdout)
         sys.stderr.buffer.write(r.stderr)
+        return r.returncode
+    if cmd in ("drain", "restore") and len(argv) == 1:
+        # Run the ordinary CLI command; drain still checks that *its* twin (the caller) is healthy.
+        r = subprocess.run([str(APP_DIR / "bin" / "debrev"), cmd], capture_output=True, text=True,
+                           env=dict(os.environ, HOME=str(p.lib)), timeout=120)
+        sys.stdout.write(r.stdout)
+        sys.stderr.write(r.stderr)
         return r.returncode
     print(f"debrev: request not allowed: {cmd}", file=sys.stderr)
     return 2

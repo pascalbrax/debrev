@@ -194,3 +194,60 @@ def test_push_no_longer_requires_issuer_flag(tmp_path):
     nodemod.save(p, nodemod.Node(name="ps", acme_issuer=False, peer_address="10.0.0.2"))
     r = certs.push(p)
     assert "no certificates" in r.message          # got past the old "not the issuer" early return
+
+
+def _clustered(tmp_path, name="b"):
+    import yaml
+    p = mk_server(tmp_path, name)
+    st.init(p)
+    d = yaml.safe_load((p.state / "settings.yaml").read_text()); d["cluster"] = {"vip": "10.1.1.9"}
+    (p.state / "settings.yaml").write_text(yaml.safe_dump(d)); st.commit(p, "c")
+    nodemod.save(p, nodemod.Node(name=name, peer_address="10.1.1.2", priority=100))
+    p.drain_file.write_text("0\n")
+    return p
+
+
+def test_take_over_asks_the_twin_to_drain_and_waits_for_the_vip(tmp_path, monkeypatch):
+    p = _clustered(tmp_path)
+    p.vrrp_state.write_text(json.dumps({"state": "BACKUP"}))
+    asked = []
+    monkeypatch.setattr(cluster, "health", lambda *_a, **_k: (True, "ok b"))
+    monkeypatch.setattr(cluster.peermod, "ask_twin", lambda p_, n_, what, **k: asked.append(what) or "twin drained")
+    monkeypatch.setattr(cluster, "probe_vip", lambda vip, timeout=2: "b")
+
+    def promote(cond, s, step=1.0):
+        p.vrrp_state.write_text(json.dumps({"state": "MASTER"}))
+        return cond()
+    monkeypatch.setattr(cluster, "_wait", promote)
+    out = []
+    assert cluster.take_over(p, out=out.append)
+    assert asked == ["drain"] and any("now served by b" in l for l in out)
+    # already master: nothing is asked of the twin
+    asked.clear()
+    assert cluster.take_over(p, out=out.append) and asked == []
+
+
+def test_take_over_refusals(tmp_path, monkeypatch):
+    p = _clustered(tmp_path)
+    p.vrrp_state.write_text(json.dumps({"state": "BACKUP"}))
+    monkeypatch.setattr(cluster, "health", lambda *_a, **_k: (False, "nginx down"))
+    with pytest.raises(cluster.ClusterError, match="not healthy"):
+        cluster.take_over(p)
+    monkeypatch.setattr(cluster, "health", lambda *_a, **_k: (True, "ok"))
+    p.drain_file.write_text("-100\n")
+    with pytest.raises(cluster.ClusterError, match="out of service"):
+        cluster.take_over(p)
+    p.drain_file.write_text("0\n")
+
+    def refuse(*_a, **_k):
+        raise cluster.peermod.PeerError("the twin is not ready to take over")
+    monkeypatch.setattr(cluster.peermod, "ask_twin", refuse)
+    with pytest.raises(cluster.ClusterError, match="did not step down"):
+        cluster.take_over(p)
+
+
+def test_hand_back_restores_the_twin(tmp_path, monkeypatch):
+    p = _clustered(tmp_path)
+    asked = []
+    monkeypatch.setattr(cluster.peermod, "ask_twin", lambda p_, n_, what, **k: asked.append(what) or "ok")
+    assert cluster.hand_back(p, out=lambda *_: None) and asked == ["restore"]

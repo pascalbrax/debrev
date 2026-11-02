@@ -21,13 +21,22 @@
 {% if d.sync %}<p class="small">Config sync: <b>{{ d.sync.state or "never run" }}</b>{% if d.sync.message %} – {{ d.sync.message }}{% endif %} <small class="muted">(checked {{ d.sync.updated or "never" }})</small></p>{% endif %}
 <form method="post" class="card">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <h2>Upgrade this server</h2>
-  <p class="small muted">Drain moves the virtual IP to the twin (it refuses if the twin is not healthy). Upgrade and reboot, then restore. This page stays reachable on this server's own address.</p>
+  <h2>Traffic</h2>
+  {% set mine = d.me %}
+  {% if d.twin and d.twin.drained %}
+  <p class="small muted"><b>{{ d.twin.name }}</b> is out of service. Handing back makes it eligible again; the preferred server (highest priority) then takes the virtual IP back.</p>
+  <div class="actions"><button name="action" value="handback" class="primary" data-confirm="Put {{ d.twin.name }} back in service?">Hand back to {{ d.twin.name }}</button></div>
+  {% elif d.twin and mine and mine.vrrp != "MASTER" and mine.healthy and not mine.drained %}
+  <p class="small muted">This server is the standby. <b>Take over traffic</b> asks {{ d.twin.name }} to step down, so the virtual IP moves here. {{ d.twin.name }} stays out of service until you hand back.</p>
+  <div class="actions"><button name="action" value="takeover" class="primary" data-confirm="Move all traffic to this server?">Take over traffic</button></div>
+  {% endif %}
+  <h2>Maintenance</h2>
+  <p class="small muted">Taking this server out of service moves the virtual IP to the twin (refused if the twin is not healthy) and keeps it from taking the IP back, also after a reboot. Upgrade, then put it back in service. This page stays reachable on this server's own address.</p>
   <div class="actions">
-    {% if d.me and d.me.drained %}
-    <button name="action" value="restore" class="primary">Restore this server</button>
+    {% if mine and mine.drained %}
+    <button name="action" value="restore" class="primary">Put back in service</button>
     {% else %}
-    <button name="action" value="drain" data-confirm="Move all traffic to the twin so this server can be upgraded?">Drain this server</button>
+    <button name="action" value="drain" data-confirm="Take this server out of service? {% if mine and mine.vrrp == 'MASTER' %}All traffic moves to the twin.{% else %}It will not take over if the twin fails.{% endif %}">Take out of service</button>
     {% endif %}
     <button name="action" value="sync">Sync now</button>
   </div>

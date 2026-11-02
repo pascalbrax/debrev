@@ -606,3 +606,31 @@ def test_restoring_a_version_identical_to_the_newest_changes_nothing(client, pat
     assert r.status_code == 303 and len(st.log(paths, 20)) == before
     msg = client.get("/history").text
     assert "Nothing changed" in msg and "Not live until you apply" not in msg
+
+
+def _cluster_page(client, paths, monkeypatch, me, twin):
+    from debrev import cluster as cl, peer as pr
+    login(client)
+    monkeypatch.setattr(cl, "local_view", lambda p: me)
+    monkeypatch.setattr(cl, "probe_vip", lambda *_a, **_k: None)
+    monkeypatch.setattr(pr, "peer_status", lambda *_a, **_k: {"cluster": twin} if twin else (_ for _ in ()).throw(pr.PeerError("x")))
+    from debrev import node as nodemod
+    nodemod.save(paths, nodemod.Node(name="me", peer_address="10.0.0.2"))
+    return client.get("/cluster").text
+
+
+def test_cluster_buttons_follow_the_role(client, paths, monkeypatch):
+    base = {"name": "debrev2", "healthy": True, "health": "ok", "drained": False, "priority": 100}
+    tw = {"name": "debrev", "healthy": True, "health": "ok", "drained": False, "priority": 150, "vrrp": "MASTER"}
+    # standby: can take over, can take itself out of service
+    t = _cluster_page(client, paths, monkeypatch, dict(base, vrrp="BACKUP"), tw)
+    assert "Take over traffic" in t and "Take out of service" in t and "Hand back" not in t
+    # active server: no take-over
+    t = _cluster_page(client, paths, monkeypatch, dict(base, vrrp="MASTER", priority=150), dict(tw, vrrp="BACKUP"))
+    assert "Take over traffic" not in t and "Take out of service" in t
+    # twin was taken out of service: offer to hand back, naming it
+    t = _cluster_page(client, paths, monkeypatch, dict(base, vrrp="MASTER"), dict(tw, drained=True, vrrp="BACKUP"))
+    assert "Hand back to debrev" in t and "Take over traffic" not in t
+    # this server is out of service
+    t = _cluster_page(client, paths, monkeypatch, dict(base, vrrp="BACKUP", drained=True), tw)
+    assert "Put back in service" in t and "Take over traffic" not in t

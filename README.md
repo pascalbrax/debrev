@@ -164,6 +164,8 @@ debrev drain          # moves the virtual IP to the twin; refuses if the twin is
 apt update && apt full-upgrade ; reboot if needed
 debrev restore        # eligible again; the preferred node takes the IP back when healthy
 ```
+To switch deliberately without upgrading, run `debrev takeover` on the standby (it asks the twin to drain itself, so the virtual IP moves here) and later `debrev handback` (puts the twin back in service; the preferred node takes the IP again). The Cluster page has the same as buttons.
+
 A crashed nginx or keepalived fails over by itself (seconds). A drained node stays drained across reboots.
 
 ## Web interface
@@ -171,7 +173,7 @@ A crashed nginx or keepalived fails over by itself (seconds). A drained node sta
 ```
 sudo debrev user add alice        # asks for a password (min 10 characters)
 ```
-Dashboard (both servers, who is MASTER, "you are here"), hosts, certificates (Let's Encrypt and your own), history/rollback, cluster drain/restore, Let's Encrypt and DNS-provider settings are all there; it works on phones. Turn on two-factor login on the Account page. Saved changes go live with "Apply now". Never port-forward 8443 to the internet.
+Dashboard (both servers, who is MASTER, "you are here"), hosts, certificates (Let's Encrypt and your own), history/rollback, cluster (take out of service, take over traffic, hand back), Let's Encrypt and DNS-provider settings are all there; it works on phones. Turn on two-factor login on the Account page. Saved changes go live with "Apply now". Never port-forward 8443 to the internet.
 
 ## Health page
 *Health* in the web interface (this server's own traffic, from nginx's JSON access log `/var/log/nginx/debrev.log`, counted every minute by `debrev-traffic.timer` into `/var/lib/debrev/traffic.db`, 8 days kept): suggestions, requests by status and traffic charts (hour / 24 hours / 7 days, with a table view), live backend reachability, per-host and per-address tables (scanners stand out) and the latest requests (all or errors only). Query strings are never logged. `debrev traffic collect` runs the counter by hand. Each server shows its own traffic; open the twin's address to see the other.

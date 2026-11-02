@@ -244,3 +244,40 @@ def restore(p: Paths, wait: int = 30, out=print) -> bool:
         out(f"{cl['vip']} is served by {owner or 'nobody (!)'}"
             + ("" if owner == n.name or not expect_back else " (the preferred node will take it back shortly)"))
     return True
+
+
+def take_over(p: Paths, wait: int = 40, out=print) -> bool:
+    """Make *this* node the one that serves the virtual IP, by asking the twin to drain itself."""
+    n = nodemod.load(p)
+    cl = cluster_settings(p)
+    if not cl["vip"] or not n.has_peer:
+        raise ClusterError("no cluster configured")
+    if drained(p):
+        raise ClusterError(f"{n.name} is out of service; put it back in service first")
+    ok, msg = health(p, n)
+    if not ok:
+        raise ClusterError(f"{n.name} is not healthy ({msg}); it cannot take over")
+    if vrrp_state(p).get("state") == "MASTER":
+        out(f"{n.name} already serves {cl['vip']}")
+        return True
+    try:
+        out(peermod.ask_twin(p, n, "drain"))
+    except (peermod.PeerError, ValueError) as e:
+        raise ClusterError(f"the twin did not step down: {e}")
+    if not _wait(lambda: vrrp_state(p).get("state") == "MASTER" and probe_vip(cl["vip"]) == n.name, wait):
+        raise ClusterError(f"{n.name} does not answer on {cl['vip']} yet; check 'journalctl -u keepalived'")
+    out(f"{cl['vip']} is now served by {n.name}. The twin stays out of service until you hand back.")
+    return True
+
+
+def hand_back(p: Paths, out=print) -> bool:
+    """Put the twin back in service. The preferred node (higher priority) takes the virtual IP again."""
+    n = nodemod.load(p)
+    cl = cluster_settings(p)
+    if not cl["vip"] or not n.has_peer:
+        raise ClusterError("no cluster configured")
+    try:
+        out(peermod.ask_twin(p, n, "restore"))
+    except (peermod.PeerError, ValueError) as e:
+        raise ClusterError(f"the twin could not be restored: {e}")
+    return True
