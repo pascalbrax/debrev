@@ -14,7 +14,9 @@ All screenshots show a demo instance with example.com data (`tools/demo.py`, `to
 | ![History](docs/screenshots/history.png) **History**: every change is a commit, roll back any time | ![Phone](docs/screenshots/dashboard-mobile.png) **On a phone** |
 
 ## Status
-Phases 1-6 (core engine, CLI, Let's Encrypt, twin sync, failover/drain, web UI, join/update) and the abuse-protection part of phase 7 are implemented. The join script (`install.sh --join`) is in.
+All planned phases are implemented and in production use: core engine and CLI, Let's Encrypt (HTTP-01, DNS-01, wildcard), twin-server sync, failover and drain with keepalived, web interface with 2FA, `install.sh --join`/`--update`, abuse protection, health page, configuration export/import. Tested on Debian 13 (trixie, in production) and Debian 12 (bookworm, fresh two-node install in containers). Not yet tested on Debian testing. Alerts by e-mail or webhook come in the next version (see `docs/ROADMAP.md`).
+
+Documentation: [`docs/DESIGN.md`](docs/DESIGN.md) (how it works), [`docs/ROADMAP.md`](docs/ROADMAP.md) (phases, notes, next version), [`docs/RECIPES.md`](docs/RECIPES.md) (settings for common apps), [`docs/ACCESS.md`](docs/ACCESS.md) (admin accounts instead of root SSH, deploy keys).
 
 ## Install (first node)
 ```
@@ -183,10 +185,14 @@ sudo ./install.sh --fail2ban          # optional: ban addresses that keep hittin
 - **Rate limiting** (on by default, `settings.yaml: security`): per client address requests/second with a burst, plus simultaneous connections; over the limit the visitor gets `429`. Local networks are never limited unless you turn `lan_exempt` off. A host with huge transfers (speed tests) can opt out with `rate_limit: false`, and a busy one (Nextcloud sync, S3 clients) can have its own, higher limits: `rate_limit: {rate: 200, burst: 2000, connections: 500}` (host page > Advanced). Values you leave out come from Settings.
 - nginx (Debian's default config hides the version) closes slow or stuck clients early, and answers requests for unknown host names or a bare IP by hanging up.
 - The checklist tests: rate limiting, the catch-all behaviour (live probe), certificates (staging or missing), hosts without HTTPS, HTTP-01 hosts (they need port 80 from the internet), listening ports, web logins without 2FA, SSH password login. It cannot see your router: forward only 80 and 443 to the virtual IP, never 8443 or 22.
+- **fail2ban** (optional): the Security page lists the addresses banned right now on this server, since when, and the hosts they were rate limited on. Release one early with `sudo fail2ban-client set nginx-limit-req unbanip ADDRESS`.
 - The web interface itself refuses every address outside local networks, even if the port were exposed by mistake.
 
-## Tests
-`python3 -m pytest tests` (needs `python3-pytest`; nginx and openssl for the full-config test).
+History: every change is a git commit. `debrev history`, `debrev diff [rev]`, `debrev rollback [rev]`, or History in the web interface (restoring a version that is identical to the newest one changes nothing, and says so).
+
+## Tests and screenshots
+`python3 -m pytest tests` (needs `python3-pytest`; nginx and openssl for the full-config test). About 180 tests cover the schema, rendering, apply and rollback, certificates, sync, failover, the web interface, the installer and failure cases (renewal failure, peer down, newer state format, hostile peer state, damaged statistics).
+`tools/demo.py` builds a throw-away demo instance with example.com data and `tools/screenshots.py` takes the screenshots in `docs/screenshots` (needs chromium and python3-websocket; neither touches real state).
 
 ## Known limitations
 - nginx will not load a config whose upstream *hostname* does not resolve, so a bad hostname fails the apply (safe, but also blocks other changes). Use IPs or fix DNS; a runtime-resolve option is planned.

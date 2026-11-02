@@ -29,6 +29,17 @@ No pip, no venv. Keep the list in `requirements.apt`.
 | `/var/lib/debrev/releases`, `live` | rendered nginx config releases; `live` symlink is swapped atomically | no |
 | `/etc/letsencrypt` | certs and keys | rsync, not git |
 
+## Code map (`debrev/`)
+| Module | Purpose |
+|---|---|
+| `schema.py`, `state.py` | host/settings schema and validation; the git state repository (commit, restore, load) |
+| `render.py`, `apply.py` | state to nginx config; the apply pipeline with rollback |
+| `certs.py`, `dns.py` | Let's Encrypt via certbot (HTTP-01, DNS-01), shared and uploaded certificates; upstream name cache |
+| `peer.py`, `cluster.py`, `node.py` | twin sync over SSH, keepalived/VIP and drain, node-local settings |
+| `portable.py` | configuration export and import (one YAML file) |
+| `traffic.py`, `sysinfo.py`, `security.py`, `fail2ban.py` | Health page statistics, server load, exposure checklist, banned addresses |
+| `web.py`, `auth.py`, `cli.py` | web interface (FastAPI), logins and 2FA, command line |
+
 ## Apply pipeline
 render to staging → `nginx -t` → atomic swap → reload → health check → automatic rollback on failure. Every UI save is a git commit.
 
@@ -74,7 +85,7 @@ Details:
 - Caching: global `proxy_cache_path` zone with size limit; per host `proxy_cache`, `proxy_cache_valid`, `proxy_cache_bypass`, `proxy_no_cache`; `X-Cache-Status` header; purge button clears that host's cache dir. Cache is per node and not synced.
 
 ## Web UI
-FastAPI + Jinja2 + htmx, no Node toolchain. Bind to LAN/VPN on a separate port (e.g. 8443). Argon2 password hashes, TOTP later, audit trail via git. App runs as unprivileged `debrev` user with a sudoers entry for the single apply script.
+FastAPI + Jinja2, no Node toolchain, strict CSP (no inline scripts or styles). Bind to LAN/VPN on a separate port (8443). Argon2 password hashes, optional TOTP, audit trail via git. App runs as unprivileged `debrev` user with a sudoers entry for the single apply script.
 
 ## Effort
 MVP of all goals ≈ 4–5 weeks; polished v1 ≈ 11–13 weeks. See ROADMAP.md.

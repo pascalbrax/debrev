@@ -55,16 +55,16 @@ Estimates are for one developer. MVP ≈ 4–5 weeks, polished v1 ≈ 11–13 we
 
 ## Phase 7: Hardening and tests (~1.5 wk)
 - DONE: rate/connection limiting, slow-client timeouts, hidden version, exposure checklist (`debrev security`, web page), optional fail2ban jail.
-- Two-node integration tests (VMs/containers for CI only, not in production).
-- Run against Debian stable and testing; render-and-`nginx -t` test for every option combination.
-- Fail-safe tests: bad config, sync divergence, peer down, cert renewal failure.
+- DONE: fail-safe tests (bad config, sync divergence, peer down, cert renewal failure, newer state format, hostile peer state, damaged statistics database).
+- DONE: two-node test on fresh Debian 12 containers: `install.sh --init`, `--join` (with root and with a limited admin account), sync, drain/restore, failover when nginx dies, certificate push. It found two real problems, both fixed: nginx older than 1.25.1 does not know `http2 on;` (the template now follows the nginx version), and keepalived silently disables its health check when `/opt/debrev` is not root-owned (the installer now refuses such a directory).
+- Not done: a run on Debian testing and a fresh Debian 13 two-node install (Debian 13 runs in production); a render-and-`nginx -t` test for every option combination.
 
 ## Next version (postponed on purpose)
 - Alerts by email or webhook: certificate issue/renewal failed, backend down, sync broken, failover happened. (Until then the Health page, Certificates page and `debrev security` show these.)
 - Failover form in Settings (virtual IP, VRRP id, node priority); DNS-01 via CNAME delegation for providers without a certbot plugin (FreeDNS, Hostpoint).
 
 ## Later / optional
-- TOTP/2FA, multiple users and roles, stream (TCP/UDP) proxying via libnginx-mod-stream, Prometheus metrics, notifications on cert/sync failure, import from Nginx Proxy Manager.
+- Roles for web users (2FA and multiple users exist), stream (TCP/UDP) proxying via libnginx-mod-stream, Prometheus metrics, a one-click "use this certificate" bulk move for many hosts.
 
 ## Phase 1 notes (as built)
 - Code: `debrev/` (schema, state, render, apply, cli), `templates/`, `data/presets/`, `bin/`, `install.sh --init`, `requirements.apt`, 44 pytest tests.
@@ -80,11 +80,19 @@ Estimates are for one developer. MVP ≈ 4–5 weeks, polished v1 ≈ 11–13 we
 1. Phase 2 done: HTTPS certificates issued and auto-renewing, HTTP->HTTPS redirect active.
 2. Port 80 must be reachable from the internet for Let's Encrypt HTTP-01 (or use DNS-01 and keep 80 closed).
 3. Every proxied app is one you are happy to expose; use access lists for the rest.
-4. Rate limiting / basic abuse protection (planned in phase 7).
+4. Rate limiting / basic abuse protection (done in phase 7; see `debrev security`).
 5. Admin UI (phase 5) stays LAN/VPN-only, never forwarded.
 
-## Pending: migrate from Nginx Proxy Manager
-21 NPM proxy hosts (26 domain names) are saved in `/root/debrev-private/npm-proxy-hosts.yaml` (kept outside the repo on purpose), validated against the debrev schema. Not applied yet. To do: check per-host advanced settings in NPM (websockets, cache, HSTS, custom config), make sure upstream names resolve from this host, issue certificates (needs Phase 2), then `debrev host add` / import and switch DNS or port-forwarding. Needs a one-shot importer (`debrev import-npm`) or a script.
+## Migration from Nginx Proxy Manager: DONE
+The proxy hosts were imported (`debrev import`), certificates issued, and traffic switched from Nginx Proxy Manager to debrev on 2026-11-01. The host list itself is kept private on purpose and is not part of this repository.
+
+## Added after the phases
+- Wildcard certificates (host option, DNS-01) and hosts that **use an installed certificate** chosen from a list (`tls: {cert: shared, cert_from: NAME}`): the owning host renews it, coverage is checked, and the owner cannot be removed or disabled while others use it.
+- **Export / import**: `debrev export` writes hosts, access lists and settings to one YAML file (no certificates, keys or tokens); `debrev import` (and Hosts > Export / import in the web interface) previews, then saves; settings only with `--settings`; all-or-nothing with rollback.
+- Security page: addresses currently banned by fail2ban and the hosts they hit; Health page: traffic charts, backends, scanners, this server's CPU/memory/disk.
+- History: versions identical to the newest are marked and restoring them says "nothing changed".
+- Presets were removed; every host carries its own settings (recipes in `docs/RECIPES.md`). Per-host rate-limit override.
+- GPL-3.0 license, screenshots, demo and screenshot tools.
 
 ## Phase 2 notes (as built)
 - `debrev acme set/show`, `debrev certs list|issue|renew`; root-side modes of `bin/debrev-apply`: `--certs`, `--certs-force`, `--certs-auto`, `--renew`, `--cert-info` (fixed whitelist, also in sudoers).
