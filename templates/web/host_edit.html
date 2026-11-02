@@ -36,7 +36,7 @@
     {% set _dom = values.get('domain') or raw.get('domain', '') %}
     {% set _al = (values.get('aliases') if values.get('aliases') is not none else (raw.get('aliases', [])|join("\n"))).split() %}
     {% if not _dom.startswith("*.") %}
-    <label class="check"><input type="checkbox" name="wildcard" {% if ("*." ~ _dom) in _al %}checked{% endif %}> Wildcard certificate: also cover all subdomains (<code>*.{{ _dom or "example.com" }}</code>) &ndash; uses DNS-01</label>
+    <label class="check"><input type="checkbox" name="wildcard" {% if ("*." ~ _dom) in _al %}checked{% endif %}> Wildcard certificate (DNS-01 only)</label>
     {% endif %}
     {% if providers %}
     <label>DNS provider for DNS-01
