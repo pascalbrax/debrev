@@ -107,6 +107,14 @@ def diff(p: Paths, rev: str | None = None) -> str:
     return _git(p, "show", "--format=%h %an: %s", rev)
 
 
+def same_as_head(p: Paths, n: int = 60) -> set[str]:
+    """Revisions (of the last n) whose files are identical to the newest version: restoring them changes nothing."""
+    rows = [ln.split() for ln in _git(p, "log", f"-n{n}", "--format=%H %T", check=False).splitlines() if ln.strip()]
+    if not rows:
+        return set()
+    return {rev for rev, tree in rows[1:] if tree == rows[0][1]}
+
+
 def restore(p: Paths, rev: str) -> str | None:
     """Make the working tree match `rev` and record it as a new commit."""
     _git(p, "rev-parse", "--verify", f"{rev}^{{commit}}")

@@ -477,7 +477,10 @@ def cmd_rollback(a, p):
     if not rev:
         sys.exit("nothing to roll back to")
     new = st.restore(p, rev)
-    print(f"state restored to {rev[:8]} (new commit {new[:8] if new else 'none'}); run 'debrev apply' to publish")
+    if new is None:
+        print(f"nothing changed: {rev[:8]} has exactly the same configuration as the newest version")
+        return
+    print(f"state restored to {rev[:8]} (new commit {new[:8]}); run 'debrev apply' to publish")
 
 
 def cmd_status(a, p):

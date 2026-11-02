@@ -587,3 +587,22 @@ def test_cli_cert_from_and_remove_protection(paths, tmp_path):
     r = run("host", "rm", "example.com")
     assert r.returncode != 0 and "other hosts use its certificate" in (r.stdout + r.stderr)
     assert (root / "var/lib/debrev/state/hosts/example.com.yaml").exists()
+
+
+def test_restoring_a_version_identical_to_the_newest_changes_nothing(client, paths):
+    from conftest import write_host
+    login(client)
+    write_host(paths, "a.example.com", "domain: a.example.com\nupstream: http://10.0.0.1:1\n")
+    base = st.commit(paths, "one", "t")
+    write_host(paths, "b.example.com", "domain: b.example.com\nupstream: http://10.0.0.1:2\n")
+    st.commit(paths, "add b", "t")
+    (paths.state / "hosts" / "b.example.com.yaml").unlink()
+    st.commit(paths, "remove b", "t")                    # same files as `base` again
+    assert base in st.same_as_head(paths)
+    page = client.get("/history").text
+    assert "same as newest" in page and page.count("/rollback") == 2           # not the newest, not the identical one: just the first commit and "add b"
+    before = len(st.log(paths, 20))
+    r = client.post(f"/history/{base[:12]}/rollback", data={"csrf": csrf_of(client, "/history")})
+    assert r.status_code == 303 and len(st.log(paths, 20)) == before
+    msg = client.get("/history").text
+    assert "Nothing changed" in msg and "Not live until you apply" not in msg

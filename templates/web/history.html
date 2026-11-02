@@ -15,7 +15,8 @@
       {% if r.rev == applied %}<span class="pill ok">live</span>{% endif %}</td>
     <td class="opt">{{ r.author }}</td>
     <td class="opt mono nw">{{ r.date[:16]|replace("T", " ") }}</td>
-    <td class="nw">{% if not loop.first %}
+    <td class="nw">{% if r.rev in same %}<span class="pill info" title="same files as the newest version">same as newest</span>
+      {% elif not loop.first %}
       <form method="post" action="/history/{{ r.rev[:12] }}/rollback" data-confirm="Restore the configuration as of {{ r.rev[:8] }}?" class="inline">
         <input type="hidden" name="csrf" value="{{ csrf }}"><button class="small">Restore</button></form>{% endif %}</td>
   </tr>

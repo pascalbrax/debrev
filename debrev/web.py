@@ -777,7 +777,7 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
             applied = json.loads(p.applied.read_text()).get("commit", "")
         except (OSError, ValueError):
             pass
-        return page(request, "history.html", s, rows=st.log(p, 60), applied=applied)
+        return page(request, "history.html", s, rows=st.log(p, 60), applied=applied, same=st.same_as_head(p, 60))
 
     @app.get("/history/{rev}")
     def history_rev(rev: str, request: Request, s=Depends(session)):
@@ -801,6 +801,8 @@ def create_app(p: Paths | None = None, secure_cookie: bool = True) -> FastAPI:
         errs = validation_errors()
         if errs:
             return redirect("/history", "Restored state does not validate: " + "; ".join(errs[:3]), "err")
+        if new is None:
+            return redirect("/history", f"Nothing changed: {rev[:8]} has exactly the same configuration as the newest version.", "warn")
         return redirect("/history", f"State restored to {rev[:8]}. Not live until you apply.")
 
     # ---------------------------------------------------------------- cluster
