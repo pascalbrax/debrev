@@ -1,33 +1,22 @@
 #!/usr/bin/python3 -I
 """keepalived notify (runs as root): record the VRRP state and let the node that
 holds the virtual IP be the one that talks to Let's Encrypt."""
-import json
 import os
 import sys
-from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from debrev import node  # noqa: E402
+from debrev import cluster, node  # noqa: E402
 from debrev.paths import Paths  # noqa: E402
 
 # keepalived calls: <TYPE> <NAME> <STATE> <PRIORITY>
 if len(sys.argv) < 4:
     sys.exit(0)
-state = sys.argv[3].upper()
-if state not in ("MASTER", "BACKUP", "FAULT", "STOP"):
+if sys.argv[3].upper() not in ("MASTER", "BACKUP", "FAULT", "STOP"):
     sys.exit(0)
-p = Paths()
-tmp = p.vrrp_state.with_suffix(".tmp")
-tmp.write_text(json.dumps({"state": state, "since": datetime.now(timezone.utc).isoformat(timespec="seconds")}) + "\n")
-tmp.chmod(0o644)
-tmp.replace(p.vrrp_state)
 try:
-    n = node.load(p)
-    want = state == "MASTER"
-    if n.acme_issuer != want and n.has_peer:
-        n.acme_issuer = want
-        node.save(p, n)
-except node.NodeError as e:
+    state = cluster.record_vrrp_state(Paths(), sys.argv[3])
+except (node.NodeError, OSError) as e:
     print(f"debrev-vrrp-notify: {e}", file=sys.stderr)
+    sys.exit(1)
 print(f"debrev: VRRP state is now {state}")

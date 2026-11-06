@@ -251,3 +251,37 @@ def test_hand_back_restores_the_twin(tmp_path, monkeypatch):
     asked = []
     monkeypatch.setattr(cluster.peermod, "ask_twin", lambda p_, n_, what, **k: asked.append(what) or "ok")
     assert cluster.hand_back(p, out=lambda *_: None) and asked == ["restore"]
+
+
+def test_notify_trusts_the_virtual_ip_not_the_argument(tmp_path, monkeypatch):
+    """After a stall keepalived runs the MASTER and the BACKUP notification at once; whichever
+    finishes last used to win. The IP on the interface decides, in any order."""
+    p = _clustered(tmp_path)
+    nodemod.save(p, nodemod.Node(name="b", peer_address="10.1.1.2", priority=100, acme_issuer=True))   # stale: claims issuer
+    p.vrrp_state.write_text(json.dumps({"state": "MASTER", "since": "x"}))                              # stale
+    monkeypatch.setattr(cluster, "vip_is_local", lambda vip: False)       # the VIP is not here
+    for told in ("BACKUP", "MASTER"):                                     # both orders, same outcome
+        assert cluster.record_vrrp_state(p, told) == "BACKUP"
+        assert json.loads(p.vrrp_state.read_text())["state"] == "BACKUP"
+        assert nodemod.load(p).acme_issuer is False
+    monkeypatch.setattr(cluster, "vip_is_local", lambda vip: True)
+    assert cluster.record_vrrp_state(p, "BACKUP") == "MASTER" and nodemod.load(p).acme_issuer is True
+    # if the interface cannot be read, the argument is used
+    monkeypatch.setattr(cluster, "vip_is_local", lambda vip: None)
+    assert cluster.record_vrrp_state(p, "BACKUP") == "BACKUP"
+    # FAULT / STOP are taken as told and do not mean "has the IP"
+    assert cluster.record_vrrp_state(p, "FAULT") == "FAULT"
+
+
+def test_vip_is_local_parses_ip_output(monkeypatch):
+    out = "2: ens18    inet 192.168.1.145/24 brd x scope global ens18\n2: ens18    inet 192.168.1.230/24 scope global secondary ens18\n"
+    monkeypatch.setattr(cluster.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
+    assert cluster.vip_is_local("192.168.1.230") is True
+    assert cluster.vip_is_local("192.168.1.23") is False          # no prefix match
+    monkeypatch.setattr(cluster.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "x"))
+    assert cluster.vip_is_local("192.168.1.230") is None
+
+
+def test_notify_script_runs(tmp_path):
+    r = subprocess.run([str(APP_DIR / "bin" / "debrev-vrrp-notify")], capture_output=True)
+    assert r.returncode == 0                                      # too few arguments: ignored

@@ -233,28 +233,37 @@ def status(p: Paths) -> dict:
 
 # ---------------------------------------------------------------- upstreams
 def probe_upstreams(p: Paths, hosts: list[dict], timeout: float = 1.5) -> list[dict]:
+    """One TCP connect per distinct backend address; hosts sharing a backend share the result."""
     cache = dns._load(p)
 
-    def one(h):
+    def target(h):
         u = urlsplit(h["upstream"])
         name = (u.hostname or "").lower()
         port = u.port or (443 if u.scheme == "https" else 80)
         ip = name if dns.is_ip(name) else (cache.get(name) or {}).get("ip")
-        r = {"domain": h["domain"], "target": f"{name}:{port}", "up": False, "ms": None, "error": ""}
-        if not ip:
-            r["error"] = "name not resolved"
-            return r
+        return name, port, ip
+
+    def probe(key):
+        ip, port = key
         t0 = time.monotonic()
         try:
             with socket.create_connection((ip, port), timeout=timeout):
-                r.update(up=True, ms=round((time.monotonic() - t0) * 1000))
+                return {"up": True, "ms": round((time.monotonic() - t0) * 1000), "error": ""}
         except OSError as e:
-            r["error"] = (e.strerror or str(e))[:60]
-        return r
+            return {"up": False, "ms": None, "error": (e.strerror or str(e))[:60]}
 
     live = [h for h in hosts if h["enabled"]]
+    targets = {h["domain"]: target(h) for h in live}
+    keys = sorted({(ip, port) for _n, port, ip in targets.values() if ip})
     with ThreadPoolExecutor(max_workers=16) as ex:
-        return sorted(ex.map(one, live), key=lambda r: (r["up"], r["domain"]))
+        found = dict(zip(keys, ex.map(probe, keys)))
+    rows = []
+    for h in live:
+        name, port, ip = targets[h["domain"]]
+        r = {"domain": h["domain"], "target": f"{name}:{port}", "up": False, "ms": None, "error": ""}
+        r.update(found[(ip, port)] if ip else {"error": "name not resolved"})
+        rows.append(r)
+    return sorted(rows, key=lambda r: (r["up"], r["domain"]))
 
 
 # ---------------------------------------------------------------- suggestions

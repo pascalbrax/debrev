@@ -8,8 +8,10 @@ node still takes the IP if the twin is down (better than no service).
 """
 from __future__ import annotations
 
+import fcntl
 import http.client
 import json
+import os
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -281,3 +283,44 @@ def hand_back(p: Paths, out=print) -> bool:
     except (peermod.PeerError, ValueError) as e:
         raise ClusterError(f"the twin could not be restored: {e}")
     return True
+
+
+def vip_is_local(vip: str) -> bool | None:
+    """Is the virtual IP configured on this machine right now? None if that cannot be told."""
+    try:
+        r = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return any(f" {vip}/" in line for line in r.stdout.splitlines())
+
+
+def record_vrrp_state(p: Paths, told: str, now=None) -> str:
+    """Called by keepalived's notify script (root). keepalived starts one notify process per
+    transition, and after a stall (MASTER then BACKUP in the same second) they run concurrently,
+    so the argument is only a hint: the virtual IP itself says which state is true. Serialised
+    with a lock; returns the state that was recorded."""
+    told = told.upper()
+    p.vrrp_state.parent.mkdir(parents=True, exist_ok=True)
+    with open(p.vrrp_state.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = told
+        if told in ("MASTER", "BACKUP"):
+            vip = cluster_settings(p)["vip"] if (p.state / "settings.yaml").exists() else None
+            local = vip_is_local(vip) if vip else None
+            if local is not None:
+                state = "MASTER" if local else "BACKUP"
+        old = vrrp_state(p)
+        if old.get("state") != state:
+            since = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+            tmp = p.vrrp_state.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"state": state, "since": since}) + "\n")
+            tmp.chmod(0o644)
+            tmp.replace(p.vrrp_state)
+        n = nodemod.load(p)
+        want = state == "MASTER"
+        if n.acme_issuer != want and n.has_peer:
+            n.acme_issuer = want
+            nodemod.save(p, n)
+    return state

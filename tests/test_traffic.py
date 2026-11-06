@@ -97,3 +97,21 @@ def test_suggestions(paths):
     assert "150 requests for unknown names" in text and "1 enabled host(s) had no requests" in text
     assert sug[0]["level"] == "bad"
     assert tf.suggestions([], [], [], [], [], {"n": 0, "c444": 0, "c429": 0}, False, 0)[0]["level"] == "ok"
+
+
+def test_hosts_sharing_a_backend_are_probed_once(paths, monkeypatch):
+    import socket
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(5)
+    port = srv.getsockname()[1]
+    for d in ("a", "b", "c"):
+        write_host(paths, f"{d}.example.com", f"domain: {d}.example.com\nupstream: http://127.0.0.1:{port}\n")
+    write_host(paths, "d.example.com", "domain: d.example.com\nupstream: http://127.0.0.1:1\n")
+    write_host(paths, "e.example.com", "domain: e.example.com\nupstream: http://127.0.0.1:1\nenabled: false\n")
+    st.commit(paths, "t")
+    calls = []
+    real = socket.create_connection
+    monkeypatch.setattr(socket, "create_connection", lambda addr, timeout=None: calls.append(addr) or real(addr, timeout=timeout))
+    res = tf.probe_upstreams(paths, st.load(paths)[0])
+    srv.close()
+    assert sorted(calls) == [("127.0.0.1", 1), ("127.0.0.1", port)]        # 2 connects for 4 enabled hosts
+    assert {r["domain"]: r["up"] for r in res} == {"a.example.com": True, "b.example.com": True, "c.example.com": True, "d.example.com": False}
