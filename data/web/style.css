@@ -95,6 +95,9 @@ table.t td.nw { white-space: nowrap; } table.t td.pick, table.t th.pick { width:
 table.t td a.dom { font-weight: 700; text-decoration: none; color: var(--text); } table.t td a.dom:hover { color: var(--accent); text-decoration: underline; }
 table.t .sub { display: block; font-size: .75rem; } table.t .sub.inline { display: inline; margin-left: .3rem; }
 table.t .pill { margin: 0 .15rem .1rem 0; }
+table.checks th:first-child, table.checks td:first-child { width: 1%; white-space: nowrap; }
+table.checks td { padding: .4rem .6rem; }
+table.checks .pill { min-width: 3.4rem; text-align: center; margin: .1rem 0 0; }
 .sub { color: var(--muted); font-size: .8rem; }
 @media (max-width: 760px) { table.t .opt { display: none; } table.t td { padding: .35rem .5rem; } }
 #filter { margin-bottom: .5rem; max-width: 22rem; }
