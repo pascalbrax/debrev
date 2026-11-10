@@ -9,8 +9,9 @@
     <dl>
       <dt>Address</dt><dd><code>{{ n.ip }}</code></dd>
       <dt>Role</dt><dd>{% if n.master %}<span class="pill ok">MASTER</span> serves {{ d.cluster.vip if d.cluster else "traffic" }}
+        {% elif n.vrrp and n.drained %}<span class="pill warn">out of service</span> <small class="muted">takes over only if the twin fails</small>
         {% elif n.vrrp %}<span class="pill">{{ n.vrrp }}</span> standby{% else %}<span class="pill">{{ "unknown" if n.error else "VRRP off" }}</span>{% endif %}
-        {% if n.drained %}<span class="pill warn">drained</span>{% endif %}</dd>
+        {% if n.drained and n.master %}<span class="pill warn">drained</span> <small class="muted">only because the twin is down</small>{% endif %}</dd>
       <dt>Health</dt><dd>{% if n.error %}<span class="pill bad">unreachable</span> <small class="muted">{{ n.error }}</small>
         {% else %}<span class="pill {{ 'ok' if n.healthy else 'bad' }}">{{ "healthy" if n.healthy else "unhealthy" }}</span>{% endif %}</dd>
     </dl>

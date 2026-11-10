@@ -634,3 +634,23 @@ def test_cluster_buttons_follow_the_role(client, paths, monkeypatch):
     # this server is out of service
     t = _cluster_page(client, paths, monkeypatch, dict(base, vrrp="BACKUP", drained=True), tw)
     assert "Put back in service" in t and "Take over traffic" not in t
+
+
+def test_dashboard_says_out_of_service_for_a_drained_server(client, paths, monkeypatch):
+    from debrev import cluster as cl, node as nodemod, peer as pr
+    login(client)
+    nodemod.save(paths, nodemod.Node(name="me", peer_address="10.0.0.2"))
+    monkeypatch.setattr(cl, "probe_vip", lambda *_a, **_k: None)
+
+    def page(me, twin):
+        monkeypatch.setattr(cl, "local_view", lambda p: me)
+        monkeypatch.setattr(pr, "peer_status", lambda *_a, **_k: {"cluster": twin})
+        return client.get("/").text
+    me = {"name": "debrev", "healthy": True, "health": "ok", "drained": False, "priority": 150, "vrrp": "MASTER"}
+    twin = {"name": "debrev2", "healthy": True, "health": "ok", "drained": False, "priority": 100, "vrrp": "BACKUP"}
+    t = page(me, twin)
+    assert "standby" in t and "out of service" not in t
+    t = page(me, dict(twin, drained=True))                    # twin taken out of service: no longer "standby"
+    assert "out of service" in t and "takes over only if the twin fails" in t and "standby" not in t
+    t = page(dict(me, drained=True, vrrp="BACKUP"), dict(twin, vrrp="MASTER"))    # this server drained, twin serves
+    assert "out of service" in t
