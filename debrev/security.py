@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import auth, certs as cr, state as st
+from . import auth, certs as cr, state as st, updates
 from .paths import Paths
 
 LEVEL_ORDER = {"fail": 0, "warn": 1, "info": 2, "ok": 3}
@@ -74,6 +74,39 @@ def drops_unknown_host(port: int = 80) -> bool | None:
         return None
 
 
+def _reboot_reason() -> str:
+    return updates.reboot_needed()
+
+
+def update_checks(p: Paths, reboot: str | None = None, pk: list[dict] | None = None) -> list[dict]:
+    res = []
+    pk = updates.waiting(p) if pk is None else pk
+    age = updates.age_days(p)
+    hint = "Install with: sudo apt update && sudo apt full-upgrade. On a pair, run 'debrev drain' first and 'debrev restore' afterwards."
+    if pk is None:
+        res.append(check("updates", "info", "Could not ask apt for updates", "apt list --upgradable did not answer."))
+    else:
+        sec = [x for x in pk if x["security"]]
+        names = lambda xs: ", ".join(x["name"] for x in xs[:8]) + (f" and {len(xs) - 8} more" if len(xs) > 8 else "")
+        if sec:
+            rest = f" ({len(pk) - len(sec)} other update(s) waiting too.)" if len(pk) > len(sec) else ""
+            res.append(check("updates", "warn", f"{len(sec)} security update(s) waiting", f"{names(sec)}. {hint}{rest}"))
+        elif pk:
+            res.append(check("updates", "info", f"{len(pk)} software update(s) available", f"{names(pk)}. {hint}"))
+        else:
+            res.append(check("updates", "ok", "Software is up to date"))
+    if age is None:
+        res.append(check("updates-old", "info", "The package lists have not been refreshed by debrev yet",
+                         "A daily timer runs 'apt-get update' (debrev-updates.timer); the first run comes shortly after the install."))
+    elif age > updates.STALE_DAYS:
+        res.append(check("updates-old", "warn", f"'apt update' last worked {int(age)} days ago",
+                         "The list above may be out of date. Check: systemctl status debrev-updates"))
+    why = _reboot_reason() if reboot is None else reboot
+    if why:
+        res.append(check("reboot", "info", "A restart is needed", why + ". On a pair, drain the server first."))
+    return res
+
+
 def audit(p: Paths, sshd_texts: list[str] | None = None, ss_text: str | None = None, probe=drops_unknown_host) -> list[dict]:
     out: list[dict] = []
     settings, serrs = st.load_settings(p)
@@ -123,6 +156,9 @@ def audit(p: Paths, sshd_texts: list[str] | None = None, ss_text: str | None = N
     plain = [h["domain"] for h in live if not h["tls"]["enabled"]]
     if plain:
         out.append(check("plain", "warn", f"{len(plain)} host(s) have HTTPS turned off", ", ".join(plain)))
+
+    # --- software updates (the root timer refreshes the package lists; installing stays manual)
+    out.extend(update_checks(p))
 
     # --- admin surfaces
     listeners = parse_listening(_ss() if ss_text is None else ss_text)

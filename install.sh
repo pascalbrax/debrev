@@ -219,6 +219,30 @@ WantedBy=timers.target
 UNIT
 if [ "$DRY" = 0 ]; then systemctl daemon-reload && systemctl enable --now debrev-certs.timer >/dev/null; fi
 
+step "Update check timer (daily 'apt-get update' so the Security page knows about new updates; installs nothing)"
+write 0644 /etc/systemd/system/debrev-updates.service <<'UNIT'
+[Unit]
+Description=debrev: refresh the package lists (does not install anything)
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/apt-get update -q
+ExecStartPost=/usr/bin/touch /var/lib/debrev/apt-updated
+UNIT
+write 0644 /etc/systemd/system/debrev-updates.timer <<'UNIT'
+[Unit]
+Description=debrev update check
+[Timer]
+OnBootSec=2min
+OnCalendar=*-*-* 06:30
+RandomizedDelaySec=1h
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+if [ "$DRY" = 0 ]; then systemctl daemon-reload && systemctl enable --now debrev-updates.timer >/dev/null; fi
+
 step "Twin sync timer (every minute; does nothing until a peer is configured)"
 write 0644 /etc/systemd/system/debrev-sync.service <<UNIT
 [Unit]

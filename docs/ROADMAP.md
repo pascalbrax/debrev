@@ -88,6 +88,7 @@ The proxy hosts were imported (`debrev import`), certificates issued, and traffi
 
 ## Added after the phases
 
+- Update check: `debrev-updates.timer` (daily and 2 minutes after boot, root) only runs `apt-get update`; the Security page reads `apt list --upgradable` (read-only, no root) and asks apt again only when dpkg's status file, apt's cache or the timer's stamp changed, or after 2 hours; nothing is stored on disk and nothing goes stale. Security updates are a warning; it also reports a needed restart and a refresh that has not worked for 7 days. Installing stays manual on purpose (drain first on a pair).
 - Cluster page by role: "Take over traffic" on the standby (asks the twin to drain itself over the peer link, which now also allows the argument-less `drain` and `restore`), "Hand back to <twin>" when the twin is out of service, "Take out of service" / "Put back in service" for maintenance. CLI: `debrev takeover`, `debrev handback`.
 - Wildcard certificates (host option, DNS-01) and hosts that **use an installed certificate** chosen from a list (`tls: {cert: shared, cert_from: NAME}`): the owning host renews it, coverage is checked, and the owner cannot be removed or disabled while others use it.
 - **Export / import**: `debrev export` writes hosts, access lists and settings to one YAML file (no certificates, keys or tokens); `debrev import` (and Hosts > Export / import in the web interface) previews, then saves; settings only with `--settings`; all-or-nothing with rollback.

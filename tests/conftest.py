@@ -10,6 +10,14 @@ from debrev import state as st  # noqa: E402
 from debrev.paths import Paths  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_real_reboot_check(monkeypatch):
+    """The Security page asks whether this machine needs a restart; tests must not depend on the host's /boot."""
+    from debrev import security, updates
+    monkeypatch.setattr(security, "_reboot_reason", lambda: "")
+    monkeypatch.setattr(updates, "waiting", lambda *a, **k: [])                         # never ask the host's apt
+
+
 @pytest.fixture
 def paths(tmp_path):
     p = Paths(etc=tmp_path / "etc", lib=tmp_path / "lib", cache=tmp_path / "cache",
